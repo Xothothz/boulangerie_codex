@@ -1,0 +1,25 @@
+# Node/JS
+node_modules/
+npm-debug.log*
+yarn.lock
+package-lock.json
+pnpm-lock.yaml
+
+# Build / Vite / React
+dist/
+build/
+.vite/
+.cache/
+coverage/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Prisma
+prisma/*.db

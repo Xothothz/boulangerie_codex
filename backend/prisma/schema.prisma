@@ -1,0 +1,204 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  UTILISATEUR
+}
+
+enum TypeMouvement {
+  ENTREE
+  SORTIE
+  AJUSTEMENT
+}
+
+enum TypePrix {
+  ACHAT
+  VENTE
+}
+
+enum NatureMouvement {
+  VENTE
+  PERTE
+  RECEPTION
+  INVENTAIRE
+  AUTRE
+}
+
+enum StatutInventaire {
+  VALIDE
+  ANNULE
+}
+
+enum StatutCommande {
+  EN_ATTENTE
+  RECEPTION_PARTIELLE
+  RECEPTIONNEE
+  ANNULEE
+}
+
+model Magasin {
+  id           Int           @id @default(autoincrement())
+  nom          String
+  code         String?       @unique
+  actif        Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  utilisateurs Utilisateur[]
+  produits     Produit[]
+  categories   Categorie[]
+  commandes    Commande[]
+  inventaires  Inventaire[]
+}
+
+model Utilisateur {
+  id         Int       @id @default(autoincrement())
+  email      String    @unique
+  nom        String
+  role       Role      @default(UTILISATEUR)
+
+  magasinId  Int?
+  magasin    Magasin?  @relation(fields: [magasinId], references: [id])
+  inventaires Inventaire[]
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+model Produit {
+  id          Int       @id @default(autoincrement())
+  nom         String
+  reference   String?   @unique
+  ean13       String?
+  ifls        String?
+  quantiteJour Int?
+  categorie   String?
+  prixAchat   Decimal?
+  unitesCarton Int?
+  categorieId Int?
+  categorieRef Categorie? @relation(fields: [categorieId], references: [id])
+  actif       Boolean   @default(true)
+  prixVente   Decimal
+
+  magasinId   Int?
+  magasin     Magasin?  @relation(fields: [magasinId], references: [id])
+
+  mouvements  MouvementStock[]
+  historiques HistoriquePrix[]
+  lignesCommande CommandeLigne[]
+  lignesInventaire InventaireLigne[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model MouvementStock {
+  id          Int             @id @default(autoincrement())
+  produitId   Int
+  produit     Produit         @relation(fields: [produitId], references: [id])
+
+  type        TypeMouvement
+  quantite    Int             // Stock mouvementé, en unités (valeur positive dans la requête, le signe sera géré côté serveur)
+  commentaire String?
+  nature      NatureMouvement @default(AUTRE)
+  inventaireId Int?
+  inventaire   Inventaire?    @relation(fields: [inventaireId], references: [id])
+
+  date        DateTime        @default(now())
+  createdAt   DateTime        @default(now())
+}
+
+model HistoriquePrix {
+  id         Int       @id @default(autoincrement())
+  produitId  Int
+  produit    Produit   @relation(fields: [produitId], references: [id])
+
+  type       TypePrix
+  prix       Decimal
+  dateDebut  DateTime  @default(now())
+
+  createdAt  DateTime  @default(now())
+}
+
+model Categorie {
+  id         Int       @id @default(autoincrement())
+  nom        String
+  couleur    String?
+  actif      Boolean   @default(true)
+  magasinId  Int?
+  magasin    Magasin?  @relation(fields: [magasinId], references: [id])
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  produits   Produit[]
+
+  @@unique([nom, magasinId])
+}
+
+model Commande {
+  id                  Int              @id @default(autoincrement())
+  statut              StatutCommande   @default(EN_ATTENTE)
+  dateCommande        DateTime
+  dateLivraisonPrevue DateTime
+  commentaire         String?
+
+  magasinId           Int?
+  magasin             Magasin?         @relation(fields: [magasinId], references: [id])
+
+  lignes              CommandeLigne[]
+
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+}
+
+model CommandeLigne {
+  id              Int       @id @default(autoincrement())
+  commandeId      Int
+  commande        Commande  @relation(fields: [commandeId], references: [id])
+
+  produitId       Int
+  produit         Produit   @relation(fields: [produitId], references: [id])
+
+  cartons         Int
+  unites          Int
+  unitesParCarton Int
+  prixAchat       Decimal?
+  unitesRecues    Int       @default(0)
+}
+
+model Inventaire {
+  id         Int              @id @default(autoincrement())
+  date       DateTime         @default(now())
+  statut     StatutInventaire @default(VALIDE)
+  commentaire String?
+  magasinId  Int?
+  magasin    Magasin?         @relation(fields: [magasinId], references: [id])
+  utilisateurId Int?
+  utilisateur   Utilisateur?   @relation(fields: [utilisateurId], references: [id])
+
+  lignes     InventaireLigne[]
+  mouvements MouvementStock[]
+
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+}
+
+model InventaireLigne {
+  id            Int         @id @default(autoincrement())
+  inventaireId  Int
+  inventaire    Inventaire  @relation(fields: [inventaireId], references: [id])
+
+  produitId     Int
+  produit       Produit     @relation(fields: [produitId], references: [id])
+
+  quantiteReelle Int
+  stockAvant    Int
+  ecart         Int
+}

@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    container_name: boulangerie_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: boulange
+      POSTGRES_PASSWORD: boulange_password
+      POSTGRES_DB: boulangerie_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+volumes:
+  db_data:
+
