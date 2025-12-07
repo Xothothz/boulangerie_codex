@@ -4,6 +4,7 @@ import { API_URL } from '../config/api'
 import { useAuth } from '../context/AuthContext'
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
+console.log('GOOGLE_CLIENT_ID (build) =', GOOGLE_CLIENT_ID)
 
 function Login() {
   const navigate = useNavigate()
