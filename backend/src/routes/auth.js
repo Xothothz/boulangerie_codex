@@ -20,7 +20,7 @@ function generateToken(user) {
       userId: user.id,
       email: user.email,
       nom: user.nom,
-      prenom: user.prenom,
+      prenom: user.prenom,        // lu depuis la BDD
       role: user.role,
       magasinId: user.magasinId || null,
     },
@@ -59,31 +59,43 @@ router.post('/google', async (req, res) => {
     const prenom = payload.given_name || null;
     const nom = payload.family_name || nomComplet || email;
 
+    // Utilisateur déjà existant ?
     let user = await prisma.utilisateur.findUnique({
       where: { email },
     });
 
+    const nomAffiche = nom || nomComplet || email;
+
     if (!user) {
+      // Création sans champ "prenom" côté Prisma (évite l’erreur)
       user = await prisma.utilisateur.create({
         data: {
           email,
-          nom: nom || nomComplet || email,
-          prenom,
+          nom: nomAffiche,
           role: 'UTILISATEUR',
         },
       });
-    } else {
-      // synchroniser si prénom/nom vides côté DB
-      const updates = {};
-      if (!user.nom && nom) updates.nom = nom;
-      if (!user.prenom && prenom) updates.prenom = prenom;
-      if (Object.keys(updates).length) {
-        user = await prisma.utilisateur.update({
-          where: { id: user.id },
-          data: updates,
-        });
-      }
+    } else if (user.nom !== nomAffiche) {
+      // Synchroniser le nom si Google a changé
+      user = await prisma.utilisateur.update({
+        where: { id: user.id },
+        data: { nom: nomAffiche }, // pas de "prenom" ici
+      });
     }
+
+    // 🔹 Mise à jour du prénom en SQL brut pour éviter le bug Prisma
+    if (prenom !== null && prenom !== undefined) {
+      await prisma.$executeRaw`
+        UPDATE "Utilisateur"
+        SET "prenom" = ${prenom}
+        WHERE "id" = ${user.id}
+      `;
+    }
+
+    // On recharge l'utilisateur pour récupérer le prénom à jour
+    user = await prisma.utilisateur.findUnique({
+      where: { id: user.id },
+    });
 
     const token = generateToken(user);
 
@@ -93,6 +105,7 @@ router.post('/google', async (req, res) => {
         id: user.id,
         email: user.email,
         nom: user.nom,
+        prenom: user.prenom,
         role: user.role,
         magasinId: user.magasinId,
         picture: payload.picture || null,
@@ -112,7 +125,7 @@ router.get('/me', authMiddleware, async (req, res) => {
         id: true,
         email: true,
         nom: true,
-        prenom: true,
+        prenom: true,     // lecture OK
         role: true,
         magasinId: true,
       },
