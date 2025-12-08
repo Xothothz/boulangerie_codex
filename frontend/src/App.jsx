@@ -11,6 +11,7 @@ import Inventaire from './pages/Inventaire'
 import Historique from './pages/Historique'
 import Mouvements from './pages/Mouvements'
 import PendingAffectation from './pages/PendingAffectation'
+import Profil from './pages/Profil'
 
 function PrivateRoute({ children }) {
   const { token, initializing, user, logout } = useAuth()
@@ -116,6 +117,16 @@ function App() {
           <PrivateRoute>
             <Layout title="Paramètres">
               <Parametres />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/profil"
+        element={
+          <PrivateRoute>
+            <Layout title="Mon profil">
+              <Profil />
             </Layout>
           </PrivateRoute>
         }

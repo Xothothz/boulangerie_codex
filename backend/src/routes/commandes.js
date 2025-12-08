@@ -3,6 +3,7 @@ import PDFDocument from 'pdfkit';
 import bwipjs from 'bwip-js';
 import prisma from '../config/db.js';
 import { ensureMagasin, getMagasinScope } from '../utils/magasin.js';
+import { requirePermission } from '../utils/permissions.js';
 
 const router = express.Router();
 
@@ -18,65 +19,118 @@ function addDays(date, days) {
   return d;
 }
 
-function computeOrderAndDelivery(dateCommande) {
+function computeOrderAndDelivery(dateCommande, config) {
   const base = startOfDay(dateCommande || new Date());
   const dow = base.getDay(); // 0=Sun ... 6=Sat
 
-  // Règle métier : si on est mardi, on prépare la commande pour samedi (livraison mardi suivant).
-  // Si on est samedi, on prépare la commande pour mardi (livraison jeudi).
-  // Sinon on se cale sur la prochaine échéance (samedi -> mardi / mardi -> samedi).
-  const isTuesday = dow === 2;
-  const isSaturday = dow === 6;
+  const cfgDays = Array.isArray(config?.joursCommande)
+    ? config.joursCommande
+        .map((d) => Number(d))
+        .filter((d) => !Number.isNaN(d) && d >= 0 && d <= 6)
+    : [];
+  const cfgDelays = config?.delaisLivraison || {};
+
+  const getDelayForDay = (day) => {
+    const val = Number(cfgDelays?.[day]);
+    return Number.isNaN(val) ? null : val;
+  };
+
+  const findNextOrder = (fromDate, offset = 0) => {
+    const start = addDays(startOfDay(fromDate), offset);
+    for (let i = 0; i < 14; i++) {
+      const candidate = addDays(start, i);
+      const cdow = candidate.getDay();
+      if (cfgDays.includes(cdow)) {
+        const delay = getDelayForDay(cdow);
+        const delivery = delay !== null && delay !== undefined ? addDays(candidate, delay) : null;
+        return { orderDate: candidate, deliveryDate: delivery };
+      }
+    }
+    return null;
+  };
 
   let orderDate;
   let deliveryDate;
+  let nextOrderDate;
+  let thirdOrderDate;
+  let nextDeliveryDate;
+  let thirdDeliveryDate;
 
-  if (isTuesday) {
-    orderDate = addDays(base, 4); // samedi
-    deliveryDate = addDays(orderDate, 3); // mardi suivant
-  } else if (isSaturday) {
-    orderDate = addDays(base, 3); // mardi
-    deliveryDate = addDays(orderDate, 2); // jeudi
-  } else {
-    // Autres jours : prochaine échéance (mardi ou samedi) la plus proche
-    const daysToTuesday = (2 - dow + 7) % 7;
-    const daysToSaturday = (6 - dow + 7) % 7;
-    if (daysToSaturday < daysToTuesday) {
-      orderDate = addDays(base, daysToSaturday); // samedi
-      deliveryDate = addDays(orderDate, 3); // mardi
-    } else {
-      orderDate = addDays(base, daysToTuesday); // mardi
-      deliveryDate = addDays(orderDate, 2); // jeudi
+  if (cfgDays.length >= 1) {
+    const current = findNextOrder(base, 0);
+    if (current) {
+      orderDate = current.orderDate;
+      deliveryDate = current.deliveryDate || addDays(orderDate, 2);
+      const next = findNextOrder(orderDate, 1) || findNextOrder(addDays(orderDate, 1), 0);
+      if (next) {
+        nextOrderDate = next.orderDate;
+        nextDeliveryDate = next.deliveryDate || addDays(next.orderDate, 2);
+        const third = findNextOrder(nextOrderDate, 1) || findNextOrder(addDays(nextOrderDate, 1), 0);
+        if (third) {
+          thirdOrderDate = third.orderDate;
+          thirdDeliveryDate = third.deliveryDate || addDays(third.orderDate, 2);
+        }
+      }
     }
   }
 
-  // Calcul de la prochaine livraison après celle qu'on prépare, pour couvrir la période
-  const nextOrderDate = (() => {
-    for (let i = 1; i <= 10; i++) {
-      const candidate = addDays(orderDate, i);
-      const cdow = candidate.getDay();
-      if (cdow === 2 || cdow === 6) return candidate;
-    }
-    return addDays(orderDate, 4); // fallback samedi
-  })();
-  const nextDeliveryDate =
-    nextOrderDate.getDay() === 2
-      ? addDays(nextOrderDate, 2) // mardi -> jeudi
-      : addDays(nextOrderDate, 3); // samedi -> mardi
+  if (!orderDate) {
+    // Fallback sur logique historique (mardi/samedi)
+    const isTuesday = dow === 2;
+    const isSaturday = dow === 6;
 
-  // Calcul encore après (livraison suivante) pour couvrir jusqu'à la prochaine après
-  const thirdOrderDate = (() => {
-    for (let i = 1; i <= 10; i++) {
-      const candidate = addDays(nextOrderDate, i);
-      const cdow = candidate.getDay();
-      if (cdow === 2 || cdow === 6) return candidate;
+    if (isTuesday) {
+      orderDate = addDays(base, 4); // samedi
+      deliveryDate = addDays(orderDate, 3); // mardi suivant
+    } else if (isSaturday) {
+      orderDate = addDays(base, 3); // mardi
+      deliveryDate = addDays(orderDate, 2); // jeudi
+    } else {
+      const daysToTuesday = (2 - dow + 7) % 7;
+      const daysToSaturday = (6 - dow + 7) % 7;
+      if (daysToSaturday < daysToTuesday) {
+        orderDate = addDays(base, daysToSaturday); // samedi
+        deliveryDate = addDays(orderDate, 3); // mardi
+      } else {
+        orderDate = addDays(base, daysToTuesday); // mardi
+        deliveryDate = addDays(orderDate, 2); // jeudi
+      }
     }
-    return addDays(nextOrderDate, 4); // fallback samedi
-  })();
-  const thirdDeliveryDate =
-    thirdOrderDate.getDay() === 2
-      ? addDays(thirdOrderDate, 2)
-      : addDays(thirdOrderDate, 3);
+
+    nextOrderDate = (() => {
+      for (let i = 1; i <= 10; i++) {
+        const candidate = addDays(orderDate, i);
+        const cdow = candidate.getDay();
+        if (cdow === 2 || cdow === 6) return candidate;
+      }
+      return addDays(orderDate, 4);
+    })();
+    nextDeliveryDate =
+      nextOrderDate.getDay() === 2 ? addDays(nextOrderDate, 2) : addDays(nextOrderDate, 3);
+
+    thirdOrderDate = (() => {
+      for (let i = 1; i <= 10; i++) {
+        const candidate = addDays(nextOrderDate, i);
+        const cdow = candidate.getDay();
+        if (cdow === 2 || cdow === 6) return candidate;
+      }
+      return addDays(nextOrderDate, 4);
+    })();
+    thirdDeliveryDate =
+      thirdOrderDate.getDay() === 2 ? addDays(thirdOrderDate, 2) : addDays(thirdOrderDate, 3);
+  } else {
+    // Si config custom mais pas de 3e date trouvée, estimer à partir des dates déjà trouvées
+    if (!nextOrderDate) {
+      nextOrderDate = addDays(orderDate, 7);
+      nextDeliveryDate = addDays(nextOrderDate, 2);
+    }
+    if (!thirdOrderDate) {
+      thirdOrderDate = addDays(nextOrderDate, 7);
+      thirdDeliveryDate = addDays(thirdOrderDate, 2);
+    }
+    if (!nextDeliveryDate) nextDeliveryDate = addDays(nextOrderDate, 2);
+    if (!thirdDeliveryDate) thirdDeliveryDate = addDays(thirdOrderDate, 2);
+  }
 
   const joursACouvrir = Math.max(
     1,
@@ -157,13 +211,27 @@ function buildPropositionLine(produit, data) {
   };
 }
 
-router.get('/proposition', async (req, res) => {
+router.get('/proposition', requirePermission('commandes:proposition'), async (req, res) => {
   const { dateCommande } = req.query;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 
   if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;
 
   try {
+    let configMagasin = null;
+    if (resolvedMagasinId) {
+      const mag = await prisma.magasin.findUnique({
+        where: { id: resolvedMagasinId },
+        select: { joursCommande: true, delaisLivraison: true },
+      });
+      if (mag) {
+        configMagasin = {
+          joursCommande: Array.isArray(mag.joursCommande) ? mag.joursCommande : [],
+          delaisLivraison: mag.delaisLivraison || {},
+        };
+      }
+    }
+
     const {
       orderDate,
       deliveryDate,
@@ -172,6 +240,7 @@ router.get('/proposition', async (req, res) => {
       joursACouvrir,
     } = computeOrderAndDelivery(
       dateCommande ? new Date(dateCommande) : new Date(),
+      configMagasin,
     );
 
     const [stockMap, pendingMap, produits] = await Promise.all([
@@ -230,7 +299,7 @@ function applyModificationToProposition(proposition, fn) {
   return copy;
 }
 
-router.post('/proposition/modifier', async (req, res) => {
+router.post('/proposition/modifier', requirePermission('commandes:edit'), async (req, res) => {
   const { proposition, produitId, cartons } = req.body;
   if (!proposition || !produitId) {
     return res.status(400).json({ error: 'Proposition et produitId requis.' });
@@ -245,7 +314,7 @@ router.post('/proposition/modifier', async (req, res) => {
   return res.json(updated);
 });
 
-router.post('/proposition/supprimer-produit', (req, res) => {
+router.post('/proposition/supprimer-produit', requirePermission('commandes:edit'), (req, res) => {
   const { proposition, produitId } = req.body;
   if (!proposition || !produitId) {
     return res.status(400).json({ error: 'Proposition et produitId requis.' });
@@ -256,7 +325,7 @@ router.post('/proposition/supprimer-produit', (req, res) => {
   return res.json(updated);
 });
 
-router.post('/proposition/ajouter-produit', async (req, res) => {
+router.post('/proposition/ajouter-produit', requirePermission('commandes:edit'), async (req, res) => {
   const { proposition, produitId, cartons = 1 } = req.body;
   if (!proposition || !produitId) {
     return res.status(400).json({ error: 'Proposition et produitId requis.' });
@@ -304,7 +373,7 @@ router.post('/proposition/ajouter-produit', async (req, res) => {
   }
 });
 
-router.post('/valider', async (req, res) => {
+router.post('/valider', requirePermission('commandes:validate'), async (req, res) => {
   const { dateCommande, dateLivraisonPrevue, lignes, commentaire } = req.body;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 
@@ -367,7 +436,7 @@ router.post('/valider', async (req, res) => {
   }
 });
 
-router.get('/en-attente', async (req, res) => {
+router.get('/en-attente', requirePermission('commandes:view'), async (req, res) => {
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
   if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;
 
@@ -393,7 +462,7 @@ router.get('/en-attente', async (req, res) => {
   }
 });
 
-router.post('/:id/recevoir', async (req, res) => {
+router.post('/:id/recevoir', requirePermission('commandes:receive'), async (req, res) => {
   const { id } = req.params;
   const { lignes, dateReception } = req.body;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
@@ -488,7 +557,7 @@ router.post('/:id/recevoir', async (req, res) => {
   }
 });
 
-router.post('/:id/annuler', async (req, res) => {
+router.post('/:id/annuler', requirePermission('commandes:cancel'), async (req, res) => {
   const { id } = req.params;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 
@@ -518,7 +587,7 @@ router.post('/:id/annuler', async (req, res) => {
   }
 });
 
-router.get('/historique', async (req, res) => {
+router.get('/historique', requirePermission('commandes:view'), async (req, res) => {
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
   if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;
 
@@ -813,7 +882,7 @@ async function buildReceptionPDF(res, commande) {
   doc.end();
 }
 
-router.get('/:id/pdf', async (req, res) => {
+router.get('/:id/pdf', requirePermission('commandes:pdf'), async (req, res) => {
   const { id } = req.params;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 
@@ -842,7 +911,7 @@ router.get('/:id/pdf', async (req, res) => {
   }
 });
 
-router.get('/:id/reception-pdf', async (req, res) => {
+router.get('/:id/reception-pdf', requirePermission('commandes:pdf'), async (req, res) => {
   const { id } = req.params;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 

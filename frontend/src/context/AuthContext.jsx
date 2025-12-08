@@ -16,6 +16,7 @@ export function AuthProvider({ children }) {
     const stored = localStorage.getItem('user')
     return stored ? JSON.parse(stored) : null
   })
+  const [profileRefreshing, setProfileRefreshing] = useState(false)
   const [initializing, setInitializing] = useState(true)
 
   const logout = useCallback(() => {
@@ -64,9 +65,27 @@ export function AuthProvider({ children }) {
     fetchMe()
   }, [logout, token])
 
+  const refreshProfile = useCallback(async () => {
+    if (!token) return
+    setProfileRefreshing(true)
+    try {
+      const response = await fetch(`${API_URL}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) throw new Error('Erreur chargement profil')
+      const data = await response.json()
+      setUser(data.user)
+      localStorage.setItem('user', JSON.stringify(data.user))
+    } catch (err) {
+      console.error('Erreur refresh profile', err)
+    } finally {
+      setProfileRefreshing(false)
+    }
+  }, [token])
+
   const value = useMemo(
-    () => ({ token, user, login, logout, initializing }),
-    [token, user, login, logout, initializing],
+    () => ({ token, user, login, logout, initializing, refreshProfile, profileRefreshing, setUser }),
+    [token, user, login, logout, initializing, refreshProfile, profileRefreshing],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

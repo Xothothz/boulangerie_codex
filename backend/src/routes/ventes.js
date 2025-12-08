@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../config/db.js';
 import { ensureMagasin, getMagasinScope } from '../utils/magasin.js';
+import { requirePermission } from '../utils/permissions.js';
 
 const router = express.Router();
 
@@ -15,7 +16,7 @@ const router = express.Router();
  *   "date": "2025-12-06T10:00:00.000Z" (optionnel)
  * }
  */
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('ventes:record'), async (req, res) => {
   const { produitId, quantite, commentaire, date } = req.body;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 
@@ -75,7 +76,7 @@ router.post('/', async (req, res) => {
  *   "date": "2025-12-06T10:00:00.000Z" (optionnel)
  * }
  */
-router.post('/pertes', async (req, res) => {
+router.post('/pertes', requirePermission('pertes:record'), async (req, res) => {
   const { produitId, quantite, commentaire, date } = req.body;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 

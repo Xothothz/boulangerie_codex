@@ -4,6 +4,7 @@ import { ensureMagasin, getMagasinScope } from '../utils/magasin.js';
 import xlsx from 'xlsx';
 import PDFDocument from 'pdfkit';
 import { getWeekDateRange } from '../utils/week.js';
+import { requirePermission, hasPermission } from '../utils/permissions.js';
 
 async function applyInventaire(lignes, date, resolvedMagasinId, utilisateurId) {
   if (!Array.isArray(lignes) || lignes.length === 0) {
@@ -146,7 +147,7 @@ function resolveNature(nature, type) {
  *   "nature": "VENTE" | "PERTE" | "RECEPTION" | "INVENTAIRE" | "AUTRE" (optionnel)
  * }
  */
-router.post('/mouvements', async (req, res) => {
+router.post('/mouvements', requirePermission('stock:movement:create'), async (req, res) => {
   const { produitId, type, quantite, commentaire, date, nature } = req.body;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 
@@ -194,7 +195,7 @@ router.post('/mouvements', async (req, res) => {
 });
 
 // Import Excel inventaire
-router.post('/inventaire-import', async (req, res) => {
+router.post('/inventaire-import', requirePermission('inventaire:import'), async (req, res) => {
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
   const utilisateurId = req.user?.id;
   if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;
@@ -298,7 +299,7 @@ router.get('/inventaires', async (req, res) => {
 });
 
 // Annulation d'un inventaire : crée des mouvements inverses et marque l'inventaire annulé
-router.post('/inventaire/:id/annuler', async (req, res) => {
+router.post('/inventaire/:id/annuler', requirePermission('inventaire:annuler'), async (req, res) => {
   const { id } = req.params;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
   if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;
@@ -348,7 +349,7 @@ router.post('/inventaire/:id/annuler', async (req, res) => {
 });
 
 // PDF récap inventaire
-router.get('/inventaire/:id/pdf', async (req, res) => {
+router.get('/inventaire/:id/pdf', requirePermission('inventaire:export'), async (req, res) => {
   const { id } = req.params;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
   if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;
@@ -457,7 +458,7 @@ router.get('/inventaire/:id/pdf', async (req, res) => {
 });
 
 // Modification d'une ligne d'inventaire (rejoue un ajustement pour une ligne)
-router.post('/inventaire/:id/modifier-ligne', async (req, res) => {
+router.post('/inventaire/:id/modifier-ligne', requirePermission('inventaire:edit-line'), async (req, res) => {
   const { id } = req.params;
   const { produitId, quantiteReelle } = req.body;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
@@ -640,7 +641,7 @@ router.get('/produits', async (req, res) => {
  * }
  * Crée des mouvements AJUSTEMENT pour aligner le stock sur la quantité réelle.
  */
-router.post('/inventaire', async (req, res) => {
+router.post('/inventaire', requirePermission('inventaire:create'), async (req, res) => {
   const { lignes, date } = req.body;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
   const utilisateurId = req.user?.id;
@@ -745,6 +746,11 @@ router.post('/mouvements-semaine', async (req, res) => {
   }
   if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;
 
+  const neededCode = type === 'ventes' ? 'ventes:grid:update' : 'pertes:grid:update';
+  if (!hasPermission(req.user, neededCode)) {
+    return res.status(403).json({ error: `Permission manquante : ${neededCode}` });
+  }
+
   try {
     const { days } = getWeekDateRange(sem);
     const nature = type === 'ventes' ? 'VENTE' : 'PERTE';
@@ -799,7 +805,7 @@ router.post('/mouvements-semaine', async (req, res) => {
   }
 });
 // Export Excel pour inventaire (liste produits avec stock actuel)
-router.get('/inventaire-feuille-excel', async (req, res) => {
+router.get('/inventaire-feuille-excel', requirePermission('inventaire:export'), async (req, res) => {
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
   if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;
 
@@ -853,7 +859,7 @@ router.get('/inventaire-feuille-excel', async (req, res) => {
 });
 
 // Export PDF pour inventaire (liste produits avec stock actuel + champ vide)
-router.get('/inventaire-feuille-pdf', async (req, res) => {
+router.get('/inventaire-feuille-pdf', requirePermission('inventaire:export'), async (req, res) => {
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
   if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;
 

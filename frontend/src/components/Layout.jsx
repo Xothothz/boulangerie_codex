@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useMagasin } from '../context/MagasinContext'
 
-const navItems = [
+const baseNav = [
   { to: '/tableau-de-bord', label: 'Tableau de bord' },
   { to: '/produits', label: 'Produits' },
   { to: '/stock', label: 'Stock' },
@@ -10,7 +10,7 @@ const navItems = [
   { to: '/mouvements', label: 'Mouvements de stock' },
   { to: '/inventaire', label: 'Inventaire' },
   { to: '/historique', label: 'Historique' },
-  { to: '/parametres', label: 'Paramètres' },
+  { to: '/profil', label: 'Mon profil' },
 ]
 
 function Layout({ title, children }) {
@@ -19,6 +19,11 @@ function Layout({ title, children }) {
   const { user, logout } = useAuth()
   const { magasins, selectedMagasinId, setSelectedMagasinId, loading, error } =
     useMagasin()
+
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN'
+  const navItems = isAdmin
+    ? [...baseNav.slice(0, -1), { to: '/parametres', label: 'Paramètres' }, baseNav[baseNav.length - 1]]
+    : baseNav
 
   const handleLogout = () => {
     logout()
@@ -67,7 +72,7 @@ function Layout({ title, children }) {
           <div className="flex items-center gap-6">
             <div className="text-right">
               <p className="text-sm text-slate-900 font-semibold">
-                {user?.nom || 'Utilisateur'}
+                {[user?.prenom, user?.nom].filter(Boolean).join(' ') || user?.nom || 'Utilisateur'}
               </p>
               <p className="text-xs text-slate-500">
                 {user?.email || 'Compte non renseigné'}

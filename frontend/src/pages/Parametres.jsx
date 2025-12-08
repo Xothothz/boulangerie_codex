@@ -11,8 +11,12 @@ function Parametres() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
-  const [createForm, setCreateForm] = useState({ nom: '', code: '' })
-  const [editForm, setEditForm] = useState({ id: null, nom: '', code: '' })
+  const emptyDays = () => ({
+    joursCommande: [],
+    delaisLivraison: {},
+  })
+  const [createForm, setCreateForm] = useState({ nom: '', code: '', ...emptyDays() })
+  const [editForm, setEditForm] = useState({ id: null, nom: '', code: '', ...emptyDays() })
   const [categories, setCategories] = useState([])
   const [catLoading, setCatLoading] = useState(false)
   const [catError, setCatError] = useState('')
@@ -25,6 +29,12 @@ function Parametres() {
   const [userMessage, setUserMessage] = useState('')
   const [adminMessage, setAdminMessage] = useState('')
   const [adminError, setAdminError] = useState('')
+  const [permDefs, setPermDefs] = useState({ permissions: [], groups: [] })
+  const [permLoading, setPermLoading] = useState(false)
+  const [permError, setPermError] = useState('')
+  const [permMessage, setPermMessage] = useState('')
+  const [permSelectedUserId, setPermSelectedUserId] = useState('')
+  const [permSelected, setPermSelected] = useState([])
 
   const fetchMagasins = async () => {
     setLoading(true)
@@ -89,6 +99,18 @@ function Parametres() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedMagasinId])
 
+  useEffect(() => {
+    if (activeSection === 'permissions') {
+      if (permDefs.permissions.length === 0) {
+        fetchPermissionDefinitions()
+      }
+      if (users.length === 0 && !userLoading) {
+        fetchUsers()
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSection])
+
   const fetchUsers = async () => {
     setUserLoading(true)
     setUserError('')
@@ -125,6 +147,68 @@ function Parametres() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSection])
 
+  const fetchPermissionDefinitions = async () => {
+    setPermLoading(true)
+    setPermError('')
+    try {
+      const response = await fetch(`${API_URL}/permissions/definitions`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (response.status === 401) {
+        logout()
+        throw new Error('Session expirée, merci de vous reconnecter.')
+      }
+      if (response.status === 403) {
+        throw new Error('Accès refusé : rôle ADMIN ou permission requise.')
+      }
+      if (!response.ok) {
+        const t = await response.text()
+        throw new Error(t || 'Erreur lors du chargement des permissions disponibles.')
+      }
+      const data = await response.json()
+      setPermDefs({
+        permissions: data.permissions || [],
+        groups: data.groups || [],
+      })
+    } catch (err) {
+      console.error('Erreur GET /permissions/definitions', err)
+      setPermError(err.message || 'Impossible de charger les permissions.')
+    } finally {
+      setPermLoading(false)
+    }
+  }
+
+  const fetchUserPermissions = async (userId) => {
+    if (!userId) return
+    setPermLoading(true)
+    setPermError('')
+    try {
+      const response = await fetch(
+        `${API_URL}/permissions/utilisateurs/${userId}`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+      )
+      if (response.status === 401) {
+        logout()
+        throw new Error('Session expirée, merci de vous reconnecter.')
+      }
+      if (response.status === 403) {
+        throw new Error('Accès refusé : permissions requises.')
+      }
+      if (!response.ok) {
+        const t = await response.text()
+        throw new Error(t || 'Erreur lors du chargement des permissions utilisateur.')
+      }
+      const data = await response.json()
+      setPermSelectedUserId(String(userId))
+      setPermSelected(data.permissions || [])
+    } catch (err) {
+      console.error('Erreur GET /permissions/utilisateurs/:id', err)
+      setPermError(err.message || 'Impossible de charger les permissions utilisateur.')
+    } finally {
+      setPermLoading(false)
+    }
+  }
+
   const handleCreate = async (e) => {
     e.preventDefault()
     setError('')
@@ -143,6 +227,8 @@ function Parametres() {
         body: JSON.stringify({
           nom: createForm.nom.trim(),
           code: createForm.code.trim() || null,
+          joursCommande: createForm.joursCommande.map((d) => Number(d)).filter((d) => !Number.isNaN(d)),
+          delaisLivraison: createForm.delaisLivraison,
         }),
       })
       if (response.status === 401) {
@@ -289,7 +375,15 @@ function Parametres() {
   }
 
   const handleEditSelect = (magasin) => {
-    setEditForm({ id: magasin.id, nom: magasin.nom, code: magasin.code || '' })
+    setEditForm({
+      id: magasin.id,
+      nom: magasin.nom,
+      code: magasin.code || '',
+      joursCommande: Array.isArray(magasin.joursCommande)
+        ? magasin.joursCommande.map((d) => String(d))
+        : [],
+      delaisLivraison: magasin.delaisLivraison || {},
+    })
   }
 
   const handleEditSubmit = async (e) => {
@@ -314,6 +408,8 @@ function Parametres() {
         body: JSON.stringify({
           nom: editForm.nom.trim(),
           code: editForm.code.trim() || null,
+          joursCommande: editForm.joursCommande.map((d) => Number(d)).filter((d) => !Number.isNaN(d)),
+          delaisLivraison: editForm.delaisLivraison,
         }),
       })
       if (response.status === 401) {
@@ -366,6 +462,66 @@ function Parametres() {
     }
   }
 
+  const togglePermissionCode = (code) => {
+    setPermSelected((prev) =>
+      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code],
+    )
+  }
+
+  const setAllPermissions = (enable) => {
+    if (enable) {
+      setPermSelected(permDefs.permissions.map((p) => p.code))
+    } else {
+      setPermSelected([])
+    }
+  }
+
+  const applyPermissionGroup = (groupCode) => {
+    const group = permDefs.groups.find((g) => g.code === groupCode)
+    if (!group) return
+    setPermSelected((prev) => Array.from(new Set([...(prev || []), ...(group.permissions || [])])))
+  }
+
+  const saveUserPermissions = async () => {
+    if (!permSelectedUserId) {
+      setPermError('Sélectionnez un utilisateur.')
+      return
+    }
+    setPermLoading(true)
+    setPermError('')
+    setPermMessage('')
+    try {
+      const response = await fetch(
+        `${API_URL}/permissions/utilisateurs/${permSelectedUserId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ permissions: permSelected }),
+        },
+      )
+      if (response.status === 401) {
+        logout()
+        throw new Error('Session expirée, merci de vous reconnecter.')
+      }
+      if (response.status === 403) {
+        throw new Error('Accès refusé : permissions requises.')
+      }
+      if (!response.ok) {
+        const t = await response.text()
+        throw new Error(t || 'Erreur lors de la mise à jour des permissions.')
+      }
+      setPermMessage('Permissions mises à jour.')
+    } catch (err) {
+      console.error('Erreur PUT /permissions/utilisateurs/:id', err)
+      setPermError(err.message || 'Impossible de mettre à jour les permissions.')
+    } finally {
+      setPermLoading(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="bg-white shadow-sm rounded-xl border border-slate-100">
@@ -383,7 +539,7 @@ function Parametres() {
           )}
         </div>
 
-        <div className="grid md:grid-cols-4 border-b border-slate-200">
+        <div className="grid md:grid-cols-5 border-b border-slate-200">
           <button
             className={`text-left px-4 py-3 text-sm font-semibold ${
               activeSection === 'magasins'
@@ -414,6 +570,18 @@ function Parametres() {
           >
             Utilisateurs
           </button>
+          {(user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && (
+            <button
+              className={`text-left px-4 py-3 text-sm font-semibold ${
+                activeSection === 'permissions'
+                  ? 'bg-emerald-50 text-emerald-800 border-l-4 border-emerald-600'
+                  : 'text-slate-700 hover:bg-slate-50'
+              }`}
+              onClick={() => setActiveSection('permissions')}
+            >
+              Permissions
+            </button>
+          )}
           {user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' ? (
             <button
               className={`text-left px-4 py-3 text-sm font-semibold ${
@@ -475,6 +643,60 @@ function Parametres() {
                           setCreateForm((prev) => ({ ...prev, code: e.target.value }))
                         }
                       />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        Jours de commande
+                      </label>
+                      <div className="grid grid-cols-4 gap-2 text-xs">
+                        {['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'].map((label, idx) => (
+                          <label key={label} className="inline-flex items-center gap-1">
+                            <input
+                              type="checkbox"
+                              checked={createForm.joursCommande.includes(String(idx))}
+                              onChange={(e) => {
+                                const checked = e.target.checked
+                                setCreateForm((prev) => {
+                                  const set = new Set(prev.joursCommande)
+                                  if (checked) set.add(String(idx))
+                                  else set.delete(String(idx))
+                                  return { ...prev, joursCommande: Array.from(set) }
+                                })
+                              }}
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {createForm.joursCommande
+                        .map((d) => Number(d))
+                        .filter((d) => !Number.isNaN(d))
+                        .sort((a, b) => a - b)
+                        .map((d) => (
+                          <div key={`delay-create-${d}`}>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1">
+                              Délai livraison pour {['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'][d]} (jours)
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={createForm.delaisLivraison?.[d] ?? ''}
+                              onChange={(e) =>
+                                setCreateForm((prev) => ({
+                                  ...prev,
+                                  delaisLivraison: {
+                                    ...(prev.delaisLivraison || {}),
+                                    [d]: e.target.value,
+                                  },
+                                }))
+                              }
+                              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                              placeholder="Ex: 2"
+                            />
+                          </div>
+                        ))}
                     </div>
                     <button
                       type="submit"
@@ -538,6 +760,60 @@ function Parametres() {
                           setEditForm((prev) => ({ ...prev, code: e.target.value }))
                         }
                       />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        Jours de commande
+                      </label>
+                      <div className="grid grid-cols-4 gap-2 text-xs">
+                        {['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'].map((label, idx) => (
+                          <label key={label} className="inline-flex items-center gap-1">
+                            <input
+                              type="checkbox"
+                              checked={editForm.joursCommande.includes(String(idx))}
+                              onChange={(e) => {
+                                const checked = e.target.checked
+                                setEditForm((prev) => {
+                                  const set = new Set(prev.joursCommande)
+                                  if (checked) set.add(String(idx))
+                                  else set.delete(String(idx))
+                                  return { ...prev, joursCommande: Array.from(set) }
+                                })
+                              }}
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {editForm.joursCommande
+                        .map((d) => Number(d))
+                        .filter((d) => !Number.isNaN(d))
+                        .sort((a, b) => a - b)
+                        .map((d) => (
+                          <div key={`delay-edit-${d}`}>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1">
+                              Délai livraison pour {['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'][d]} (jours)
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={editForm.delaisLivraison?.[d] ?? ''}
+                              onChange={(e) =>
+                                setEditForm((prev) => ({
+                                  ...prev,
+                                  delaisLivraison: {
+                                    ...(prev.delaisLivraison || {}),
+                                    [d]: e.target.value,
+                                  },
+                                }))
+                              }
+                              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                              placeholder="Ex: 2"
+                            />
+                          </div>
+                        ))}
                     </div>
                     <div className="flex gap-3">
                       <button
@@ -624,6 +900,169 @@ function Parametres() {
               </div>
             </>
           )}
+
+          {activeSection === 'permissions' &&
+            (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && (
+              <>
+                {(permError || permMessage) && (
+                  <div
+                    className={`px-4 py-3 rounded-lg border ${
+                      permError
+                        ? 'bg-red-50 border-red-200 text-red-700'
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                    }`}
+                  >
+                    {permError || permMessage}
+                  </div>
+                )}
+
+                <p className="text-sm text-slate-500 mb-2">
+                  Sélectionnez un utilisateur, cochez les actions autorisées, puis enregistrez.
+                </p>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-slate-900">
+                        Utilisateur ciblé
+                      </h3>
+                      <button
+                        onClick={() => {
+                          if (permSelectedUserId) fetchUserPermissions(permSelectedUserId)
+                        }}
+                        className="text-xs text-emerald-700 hover:text-emerald-900 font-semibold"
+                      >
+                        Recharger
+                      </button>
+                    </div>
+                    <select
+                      value={permSelectedUserId}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setPermSelectedUserId(val)
+                        setPermMessage('')
+                        setPermError('')
+                        if (val) fetchUserPermissions(val)
+                        else setPermSelected([])
+                      }}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                    >
+                      <option value="">Choisir un utilisateur...</option>
+                      {users.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.nom} ({u.email}) — {u.role}
+                        </option>
+                      ))}
+                    </select>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setAllPermissions(true)}
+                        className="inline-flex items-center rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-2 text-xs font-semibold transition"
+                      >
+                        Tout cocher
+                      </button>
+                      <button
+                        onClick={() => setAllPermissions(false)}
+                        className="inline-flex items-center rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 px-3 py-2 text-xs font-semibold transition"
+                      >
+                        Tout décocher
+                      </button>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-600">
+                        Appliquer un ensemble
+                      </label>
+                      <select
+                        defaultValue=""
+                        onChange={(e) => {
+                          const val = e.target.value
+                          if (val) {
+                            applyPermissionGroup(val)
+                            e.target.value = ''
+                          }
+                        }}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                      >
+                        <option value="">Choisir un ensemble...</option>
+                        {permDefs.groups.map((g) => (
+                          <option key={g.code} value={g.code}>
+                            {g.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <p className="text-xs text-slate-500">
+                      Les utilisateurs ADMIN / SUPER_ADMIN restent autorisés à tout faire par défaut.
+                    </p>
+                  </div>
+
+                  <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-semibold text-slate-900">Permissions</h3>
+                        <p className="text-xs text-slate-500">
+                          Cochez les actions autorisées pour cet utilisateur.
+                        </p>
+                      </div>
+                      <button
+                        onClick={saveUserPermissions}
+                        disabled={permLoading || !permSelectedUserId}
+                        className="inline-flex items-center rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-2 text-xs font-semibold transition disabled:opacity-60"
+                      >
+                        {permLoading ? 'Sauvegarde...' : 'Enregistrer'}
+                      </button>
+                    </div>
+
+                    {permLoading && (
+                      <p className="text-sm text-slate-500">Chargement des permissions...</p>
+                    )}
+
+                    {!permLoading && !permSelectedUserId && (
+                      <p className="text-sm text-slate-500">Sélectionnez un utilisateur.</p>
+                    )}
+
+                    {!permLoading && permSelectedUserId && (
+                      <div className="space-y-3">
+                        {Object.entries(
+                          permDefs.permissions.reduce((acc, p) => {
+                            const cat = p.category || 'Autres'
+                            if (!acc[cat]) acc[cat] = []
+                            acc[cat].push(p)
+                            return acc
+                          }, {}),
+                        ).map(([cat, items]) => (
+                          <div key={cat} className="border border-slate-100 rounded-lg p-3">
+                            <p className="text-xs font-semibold text-slate-600 mb-2">{cat}</p>
+                            <div className="grid sm:grid-cols-2 gap-2">
+                              {items
+                                .slice()
+                                .sort((a, b) => a.label.localeCompare(b.label))
+                                .map((item) => (
+                                  <label
+                                    key={item.code}
+                                    className="flex items-center gap-2 text-sm text-slate-700"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={permSelected.includes(item.code)}
+                                      onChange={() => togglePermissionCode(item.code)}
+                                      className="rounded border-slate-300"
+                                    />
+                                    <span>{item.label}</span>
+                                  </label>
+                                ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
 
           {activeSection === 'admin' && (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && (
             <>
@@ -974,6 +1413,7 @@ function Parametres() {
                   <thead>
                     <tr className="bg-slate-50 text-slate-700 border-b border-slate-200">
                       <th className="px-3 py-2 font-semibold">Nom</th>
+                      <th className="px-3 py-2 font-semibold">Prénom</th>
                       <th className="px-3 py-2 font-semibold">Email</th>
                       <th className="px-3 py-2 font-semibold">Rôle</th>
                       <th className="px-3 py-2 font-semibold">Magasin</th>
@@ -999,9 +1439,28 @@ function Parametres() {
                           key={u.id}
                           className="border-b last:border-0 border-slate-100 hover:bg-slate-50"
                         >
-                          <td className="px-3 py-2 text-slate-900 font-medium">{u.nom}</td>
+                          <td className="px-3 py-2 text-slate-900 font-medium">
+                            {u.nom || '-'}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">{u.prenom || '-'}</td>
                           <td className="px-3 py-2 text-slate-700">{u.email}</td>
-                          <td className="px-3 py-2 text-slate-700">{u.role}</td>
+                        <td className="px-3 py-2 text-slate-700">
+                          <select
+                            value={u.role}
+                            onChange={(e) =>
+                              setUsers((prev) =>
+                                prev.map((x) =>
+                                  x.id === u.id ? { ...x, role: e.target.value } : x,
+                                ),
+                              )
+                            }
+                            className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-sm"
+                          >
+                            <option value="UTILISATEUR">UTILISATEUR</option>
+                            <option value="ADMIN">ADMIN</option>
+                            <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                          </select>
+                        </td>
                           <td className="px-3 py-2 text-slate-700">
                             <select
                               value={u.magasinId || ''}
@@ -1026,7 +1485,7 @@ function Parametres() {
                           </td>
                           <td className="px-3 py-2">
                             <button
-                              className="text-sm font-semibold text-emerald-700 hover:text-emerald-900"
+                              className="text-sm font-semibold text-emerald-700 hover:text-emerald-900 mr-3"
                               onClick={async () => {
                                 try {
                                   const response = await fetch(
@@ -1063,6 +1522,44 @@ function Parametres() {
                               }}
                             >
                               Enregistrer
+                            </button>
+                            <button
+                              className="text-sm font-semibold text-slate-700 hover:text-slate-900"
+                              onClick={async () => {
+                                try {
+                                  const response = await fetch(
+                                    `${API_URL}/utilisateurs/${u.id}/role`,
+                                    {
+                                      method: 'PUT',
+                                      headers: {
+                                        'Content-Type': 'application/json',
+                                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                                      },
+                                      body: JSON.stringify({ role: u.role }),
+                                    },
+                                  )
+                                  if (response.status === 401) {
+                                    logout()
+                                    throw new Error('Session expirée, merci de vous reconnecter.')
+                                  }
+                                  if (response.status === 403) {
+                                    throw new Error('Accès refusé : rôle ADMIN requis.')
+                                  }
+                                  if (!response.ok) {
+                                    const errorText = await response.text()
+                                    throw new Error(
+                                      errorText || 'Erreur lors de la mise à jour du rôle utilisateur.',
+                                    )
+                                  }
+                                  setUserMessage('Rôle utilisateur mis à jour.')
+                                  await fetchUsers()
+                                } catch (err) {
+                                  console.error('Erreur PUT /utilisateurs/:id/role', err)
+                                  setUserError(err.message || 'Impossible de mettre à jour le rôle.')
+                                }
+                              }}
+                            >
+                              Enregistrer rôle
                             </button>
                           </td>
                         </tr>

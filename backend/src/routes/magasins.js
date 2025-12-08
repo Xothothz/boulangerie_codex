@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../config/db.js';
 import { getMagasinScope } from '../utils/magasin.js';
+import { requirePermission } from '../utils/permissions.js';
 
 const router = express.Router();
 
@@ -40,13 +41,17 @@ router.get('/', async (req, res) => {
  * Crée un magasin.
  * Body JSON : { "nom": "Texte", "code": "CODE01" }
  */
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('magasins:create'), async (req, res) => {
   const { isAdmin } = getMagasinScope(req);
   if (!isAdmin) {
     return res.status(403).json({ error: 'Accès refusé' });
   }
 
   const { nom, code } = req.body;
+  const joursCommande = Array.isArray(req.body?.joursCommande)
+    ? req.body.joursCommande.map((d) => Number(d)).filter((d) => !Number.isNaN(d))
+    : undefined;
+  const delaisLivraison = req.body?.delaisLivraison || undefined;
 
   if (!nom) {
     return res.status(400).json({ error: 'Le champ "nom" est obligatoire' });
@@ -57,6 +62,8 @@ router.post('/', async (req, res) => {
       data: {
         nom,
         code: code || null,
+        joursCommande: joursCommande && joursCommande.length ? joursCommande : undefined,
+        delaisLivraison: delaisLivraison || undefined,
       },
     });
     res.status(201).json(magasin);
@@ -70,7 +77,7 @@ router.post('/', async (req, res) => {
  * PUT /magasins/:id
  * Met à jour un magasin.
  */
-router.put('/:id', async (req, res) => {
+router.put('/:id', requirePermission('magasins:update'), async (req, res) => {
   const { isAdmin } = getMagasinScope(req);
   if (!isAdmin) {
     return res.status(403).json({ error: 'Accès refusé' });
@@ -78,6 +85,10 @@ router.put('/:id', async (req, res) => {
 
   const id = Number(req.params.id);
   const { nom, code, actif } = req.body;
+  const joursCommande = Array.isArray(req.body?.joursCommande)
+    ? req.body.joursCommande.map((d) => Number(d)).filter((d) => !Number.isNaN(d))
+    : undefined;
+  const delaisLivraison = req.body?.delaisLivraison || undefined;
 
   if (Number.isNaN(id)) {
     return res.status(400).json({ error: 'ID invalide' });
@@ -90,6 +101,13 @@ router.put('/:id', async (req, res) => {
         nom,
         code,
         actif,
+        joursCommande:
+          joursCommande === undefined
+            ? undefined
+            : joursCommande.length
+              ? joursCommande
+              : null,
+        delaisLivraison: delaisLivraison === undefined ? undefined : delaisLivraison || null,
       },
     });
     res.json(magasin);
@@ -103,7 +121,7 @@ router.put('/:id', async (req, res) => {
  * DELETE /magasins/:id
  * Désactive le magasin (soft delete).
  */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requirePermission('magasins:delete'), async (req, res) => {
   const { isAdmin } = getMagasinScope(req);
   if (!isAdmin) {
     return res.status(403).json({ error: 'Accès refusé' });

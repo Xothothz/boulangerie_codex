@@ -15,6 +15,8 @@ import statsRouter from './routes/stats.js';
 import commandesRouter from './routes/commandes.js';
 import utilisateursRouter from './routes/utilisateurs.js';
 import adminRouter from './routes/admin.js';
+import permissionsRouter from './routes/permissions.js';
+import profilRouter from './routes/profil.js';
 import authMiddleware from './middlewares/auth.js';
 
 const app = express();
@@ -52,6 +54,8 @@ app.use('/stats', authMiddleware, statsRouter);
 app.use('/commandes', authMiddleware, commandesRouter);
 app.use('/utilisateurs', authMiddleware, utilisateursRouter);
 app.use('/admin', authMiddleware, adminRouter);
+app.use('/permissions', authMiddleware, permissionsRouter);
+app.use('/profil', authMiddleware, profilRouter);
 
 app.listen(PORT, () => {
   console.log(`Serveur démarré sur http://localhost:${PORT}`);

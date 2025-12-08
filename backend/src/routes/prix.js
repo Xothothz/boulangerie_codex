@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../config/db.js';
 import { ensureMagasin, getMagasinScope } from '../utils/magasin.js';
+import { requirePermission } from '../utils/permissions.js';
 
 const router = express.Router();
 
@@ -15,7 +16,7 @@ const router = express.Router();
  *   "dateDebut": "2025-12-06T10:00:00.000Z" (optionnel, maintenant par défaut)
  * }
  */
-router.post('/historique', async (req, res) => {
+router.post('/historique', requirePermission('prix:write'), async (req, res) => {
   const { produitId, type, prix, dateDebut } = req.body;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 

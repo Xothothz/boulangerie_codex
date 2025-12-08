@@ -20,6 +20,7 @@ function generateToken(user) {
       userId: user.id,
       email: user.email,
       nom: user.nom,
+      prenom: user.prenom,
       role: user.role,
       magasinId: user.magasinId || null,
     },
@@ -54,7 +55,9 @@ router.post('/google', async (req, res) => {
     }
 
     const email = payload.email.toLowerCase();
-    const nom = payload.name || email;
+    const nomComplet = payload.name || email;
+    const prenom = payload.given_name || null;
+    const nom = payload.family_name || nomComplet || email;
 
     let user = await prisma.utilisateur.findUnique({
       where: { email },
@@ -64,16 +67,22 @@ router.post('/google', async (req, res) => {
       user = await prisma.utilisateur.create({
         data: {
           email,
-          nom,
+          nom: nom || nomComplet || email,
+          prenom,
           role: 'UTILISATEUR',
         },
       });
-    } else if (user.nom !== nom) {
-      // synchroniser le nom si Google a changé
-      user = await prisma.utilisateur.update({
-        where: { id: user.id },
-        data: { nom },
-      });
+    } else {
+      // synchroniser si prénom/nom vides côté DB
+      const updates = {};
+      if (!user.nom && nom) updates.nom = nom;
+      if (!user.prenom && prenom) updates.prenom = prenom;
+      if (Object.keys(updates).length) {
+        user = await prisma.utilisateur.update({
+          where: { id: user.id },
+          data: updates,
+        });
+      }
     }
 
     const token = generateToken(user);
@@ -103,6 +112,7 @@ router.get('/me', authMiddleware, async (req, res) => {
         id: true,
         email: true,
         nom: true,
+        prenom: true,
         role: true,
         magasinId: true,
       },

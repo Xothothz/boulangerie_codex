@@ -6,6 +6,7 @@ import fs from 'fs';
 import PDFDocument from 'pdfkit';
 import { getWeekDateRange } from '../utils/week.js';
 import { ensureMagasin, getMagasinScope } from '../utils/magasin.js';
+import { hasPermission, requirePermission } from '../utils/permissions.js';
 
 const router = express.Router();
 
@@ -250,9 +251,15 @@ async function importExcel(req, res, typeLabel) {
   }
 }
 
-router.post('/import-excel', async (req, res) => importExcel(req, res, 'ventes'));
-router.post('/import-excel-ventes', async (req, res) => importExcel(req, res, 'ventes'));
-router.post('/import-excel-pertes', async (req, res) => importExcel(req, res, 'pertes'));
+router.post('/import-excel', requirePermission('ventes:import'), async (req, res) =>
+  importExcel(req, res, 'ventes'),
+);
+router.post('/import-excel-ventes', requirePermission('ventes:import'), async (req, res) =>
+  importExcel(req, res, 'ventes'),
+);
+router.post('/import-excel-pertes', requirePermission('pertes:import'), async (req, res) =>
+  importExcel(req, res, 'pertes'),
+);
 
 // Helpers
 const jours = [
@@ -403,6 +410,10 @@ router.get('/feuille-excel', async (req, res) => {
 
   if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;
 
+  if (!hasPermission(req.user, ['ventes:export', 'pertes:export'])) {
+    return res.status(403).json({ error: 'Permission manquante pour exporter une feuille.' });
+  }
+
   try {
     const { monday, sunday, days } = getWeekDateRange(sem);
     if (Number.isNaN(monday.getTime()) || Number.isNaN(sunday.getTime())) {
@@ -468,6 +479,10 @@ router.get('/feuille-pdf', async (req, res) => {
   }
 
   if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;
+
+  if (!hasPermission(req.user, ['ventes:export', 'pertes:export'])) {
+    return res.status(403).json({ error: 'Permission manquante pour exporter une feuille.' });
+  }
 
   try {
     const { monday, sunday, days } = getWeekDateRange(sem);
@@ -543,7 +558,9 @@ const feuilleTypes = [
 ];
 
 feuilleTypes.forEach(({ key, label }) => {
-  router.get(`/feuille-excel-${key}`, async (req, res) => {
+  const exportCode = key === 'ventes' ? 'ventes:export' : 'pertes:export';
+
+  router.get(`/feuille-excel-${key}`, requirePermission(exportCode), async (req, res) => {
     const { sem } = req.query;
     const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 
@@ -605,7 +622,7 @@ feuilleTypes.forEach(({ key, label }) => {
     }
   });
 
-  router.get(`/feuille-pdf-${key}`, async (req, res) => {
+  router.get(`/feuille-pdf-${key}`, requirePermission(exportCode), async (req, res) => {
     const { sem } = req.query;
     const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 

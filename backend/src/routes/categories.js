@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../config/db.js';
 import { ensureMagasin, getMagasinScope } from '../utils/magasin.js';
+import { requirePermission } from '../utils/permissions.js';
 
 const router = express.Router();
 
@@ -30,7 +31,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('categories:create'), async (req, res) => {
   const { nom, couleur } = req.body;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 
@@ -60,7 +61,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', requirePermission('categories:update'), async (req, res) => {
   const id = Number(req.params.id);
   const { nom, actif, couleur } = req.body;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
@@ -97,7 +98,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requirePermission('categories:delete'), async (req, res) => {
   const id = Number(req.params.id);
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 

@@ -1,5 +1,6 @@
 import express from 'express';
 import prisma from '../config/db.js';
+import { requirePermission } from '../utils/permissions.js';
 
 const router = express.Router();
 
@@ -11,7 +12,7 @@ function ensureAdmin(req, res) {
   return true;
 }
 
-router.post('/purge-commandes', async (req, res) => {
+router.post('/purge-commandes', requirePermission('admin:purge:commandes'), async (req, res) => {
   if (!ensureAdmin(req, res)) return;
   try {
     await prisma.$transaction([
@@ -25,7 +26,7 @@ router.post('/purge-commandes', async (req, res) => {
   }
 });
 
-router.post('/purge-inventaires', async (req, res) => {
+router.post('/purge-inventaires', requirePermission('admin:purge:inventaires'), async (req, res) => {
   if (!ensureAdmin(req, res)) return;
   try {
     await prisma.$transaction([
@@ -40,7 +41,7 @@ router.post('/purge-inventaires', async (req, res) => {
   }
 });
 
-router.post('/purge-mouvements', async (req, res) => {
+router.post('/purge-mouvements', requirePermission('admin:purge:mouvements'), async (req, res) => {
   if (!ensureAdmin(req, res)) return;
   try {
     await prisma.mouvementStock.deleteMany({});

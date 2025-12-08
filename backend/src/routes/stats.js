@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../config/db.js';
 import { ensureMagasin, getMagasinScope } from '../utils/magasin.js';
+import { requirePermission } from '../utils/permissions.js';
 
 const router = express.Router();
 
@@ -26,7 +27,7 @@ function dateKey(d) {
   return d.toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
-router.get('/overview', async (req, res) => {
+router.get('/overview', requirePermission('stats:read'), async (req, res) => {
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 
   if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;

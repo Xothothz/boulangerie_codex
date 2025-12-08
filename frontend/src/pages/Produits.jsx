@@ -18,9 +18,10 @@ function Produits() {
   const [searchTerm, setSearchTerm] = useState('')
   const [categories, setCategories] = useState([])
   const [filterCategorieId, setFilterCategorieId] = useState('')
+  const [filterActif, setFilterActif] = useState('all') // all | true | false
   const [sortKey, setSortKey] = useState('nom')
   const [sortDir, setSortDir] = useState('asc')
-  const [formData, setFormData] = useState({
+  const initialForm = {
     nom: '',
     reference: '',
     categorie: '',
@@ -31,19 +32,31 @@ function Produits() {
     prixAchat: '',
     unitesCarton: '',
     categorieId: '',
-  })
+  }
+  const [formData, setFormData] = useState(initialForm)
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [actionMessage, setActionMessage] = useState('')
   const [actionError, setActionError] = useState('')
   const [toggleLoadingId, setToggleLoadingId] = useState(null)
+  const [activeTab, setActiveTab] = useState('list') // list | add
+  const [importState, setImportState] = useState({
+    file: null,
+    loading: false,
+    error: '',
+    result: null,
+  })
 
   const fetchProduits = async () => {
     setLoading(true)
     setError('')
     try {
-      const query = selectedMagasinId ? `?magasinId=${selectedMagasinId}` : ''
-      const response = await fetch(`${API_URL}/produits${query}`, {
+      const params = new URLSearchParams()
+      if (selectedMagasinId) params.set('magasinId', selectedMagasinId)
+      if (filterActif !== 'all') params.set('actif', filterActif === 'true' ? 'true' : 'false')
+      const qs = params.toString() ? `?${params.toString()}` : ''
+
+      const response = await fetch(`${API_URL}/produits${qs}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
       if (response.status === 401) {
@@ -70,7 +83,7 @@ function Produits() {
     if (selectedMagasinId !== null && selectedMagasinId !== undefined) {
       fetchProduits()
     }
-  }, [selectedMagasinId])
+  }, [selectedMagasinId, filterActif])
 
   const fetchCategories = async () => {
     try {
@@ -259,18 +272,7 @@ function Produits() {
         )
       }
 
-      setFormData({
-        nom: '',
-        reference: '',
-        categorie: '',
-        prixVente: '',
-        ean13: '',
-        ifls: '',
-        quantiteJour: '',
-        prixAchat: '',
-        unitesCarton: '',
-        categorieId: '',
-      })
+      setFormData(initialForm)
       setEditingId(null)
       setActionMessage(
         editingId ? 'Produit mis à jour avec succès.' : 'Produit ajouté avec succès.',
@@ -287,6 +289,80 @@ function Produits() {
       )
     } finally {
       setAdding(false)
+    }
+  }
+
+  const downloadExcel = async () => {
+    try {
+      const params = new URLSearchParams()
+      if (selectedMagasinId) params.set('magasinId', selectedMagasinId)
+      const qs = params.toString() ? `?${params.toString()}` : ''
+
+      const response = await fetch(`${API_URL}/produits/export-excel${qs}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (response.status === 401) {
+        logout()
+        throw new Error('Session expirée, merci de vous reconnecter.')
+      }
+      if (!response.ok) {
+        const t = await response.text()
+        throw new Error(t || 'Erreur export Excel produits.')
+      }
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'Produits.xlsx'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Erreur export Excel produits', err)
+      setActionError(err.message || 'Impossible de télécharger le fichier.')
+    }
+  }
+
+  const importExcel = async () => {
+    if (!importState.file) {
+      setImportState((prev) => ({ ...prev, error: 'Choisissez un fichier .xlsx' }))
+      return
+    }
+    setImportState((prev) => ({ ...prev, loading: true, error: '', result: null }))
+    try {
+      const formData = new FormData()
+      formData.append('file', importState.file)
+      const params = new URLSearchParams()
+      if (selectedMagasinId) params.set('magasinId', selectedMagasinId)
+      const qs = params.toString() ? `?${params.toString()}` : ''
+
+      const response = await fetch(`${API_URL}/produits/import-excel${qs}`, {
+        method: 'POST',
+        body: formData,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (response.status === 401) {
+        logout()
+        throw new Error('Session expirée, merci de vous reconnecter.')
+      }
+      if (!response.ok) {
+        const t = await response.text()
+        throw new Error(t || 'Erreur lors de l’import.')
+      }
+      const data = await response.json()
+      setImportState((prev) => ({ ...prev, result: data }))
+      setActionMessage('Import produits terminé.')
+      await fetchProduits()
+      await fetchStock()
+    } catch (err) {
+      console.error('Erreur import Excel produits', err)
+      setImportState((prev) => ({
+        ...prev,
+        error: err.message || 'Impossible d’importer le fichier.',
+      }))
+    } finally {
+      setImportState((prev) => ({ ...prev, loading: false }))
     }
   }
 
@@ -341,216 +417,262 @@ function Produits() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-slate-900">
-              Liste des produits
-            </h2>
-            <p className="text-slate-500 text-sm">
-              Produits du magasin, actifs et désactivés
-            </p>
-          </div>
-          <button
-            onClick={async () => {
-              await fetchProduits()
-              await fetchStock()
-            }}
-            className="inline-flex items-center justify-center rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 text-sm font-semibold transition"
-          >
-            Recharger
-          </button>
-        </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => setActiveTab('list')}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold ${
+            activeTab === 'list'
+              ? 'bg-emerald-700 text-white'
+              : 'bg-slate-100 text-slate-700'
+          }`}
+        >
+          Liste des produits
+        </button>
+        <button
+          onClick={() => {
+            setActiveTab('add')
+            if (!editingId) setFormData(initialForm)
+          }}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold ${
+            activeTab === 'add'
+              ? 'bg-emerald-700 text-white'
+              : 'bg-slate-100 text-slate-700'
+          }`}
+        >
+          Ajouter / modifier
+        </button>
+      </div>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Rechercher par nom ou référence
-            </label>
-            <input
-              type="text"
-              placeholder="Ex : baguette"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-            />
-          </div>
-          <div className="bg-slate-50 rounded-lg border border-slate-200 p-3 text-sm text-slate-600">
-            <p className="font-semibold text-slate-700">Astuce</p>
-            <p>
-              Filtrez la liste, puis ajoutez un produit en renseignant son prix
-              de vente TTC.
-            </p>
-          </div>
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Filtrer par catégorie
-            </label>
-            <select
-              value={filterCategorieId}
-              onChange={(e) => setFilterCategorieId(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600 text-sm"
+      {activeTab === 'list' && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-900">
+                Liste des produits
+              </h2>
+              <p className="text-slate-500 text-sm">
+                Produits du magasin, actifs et désactivés
+              </p>
+            </div>
+            <button
+              onClick={async () => {
+                await fetchProduits()
+                await fetchStock()
+              }}
+              className="inline-flex items-center justify-center rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 text-sm font-semibold transition"
             >
-              <option value="">Toutes</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nom}
-                </option>
-              ))}
-            </select>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Trier par
-            </label>
-            <div className="flex gap-2">
+              Recharger
+            </button>
+          </div>
+
+        <div className="mt-4 space-y-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-[240px]">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Rechercher par nom ou référence
+              </label>
+              <input
+                type="text"
+                placeholder="Ex : baguette"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+              />
+            </div>
+            <div className="min-w-[180px]">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Filtrer par catégorie
+              </label>
               <select
-                value={sortKey}
-                onChange={(e) => setSortKey(e.target.value)}
-                className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600 text-sm"
+                value={filterCategorieId}
+                onChange={(e) => setFilterCategorieId(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600 text-sm"
               >
-                <option value="nom">Nom</option>
-                <option value="prixVente">Prix de vente</option>
-                <option value="stock">Stock</option>
+                <option value="">Toutes</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nom}
+                  </option>
+                ))}
               </select>
+            </div>
+            <div className="min-w-[160px]">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Statut
+              </label>
               <select
-                value={sortDir}
-                onChange={(e) => setSortDir(e.target.value)}
-                className="w-28 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600 text-sm"
+                value={filterActif}
+                onChange={(e) => setFilterActif(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600 text-sm"
               >
-                <option value="asc">Asc</option>
-                <option value="desc">Desc</option>
+                <option value="all">Actifs et inactifs</option>
+                <option value="true">Actifs uniquement</option>
+                <option value="false">Inactifs uniquement</option>
               </select>
+            </div>
+            <div className="flex items-end gap-2 min-w-[220px]">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Trier par
+                </label>
+                <select
+                  value={sortKey}
+                  onChange={(e) => setSortKey(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600 text-sm"
+                >
+                  <option value="nom">Nom</option>
+                  <option value="prixVente">Prix de vente</option>
+                  <option value="stock">Stock</option>
+                </select>
+              </div>
+              <div className="w-24">
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Ordre
+                </label>
+                <select
+                  value={sortDir}
+                  onChange={(e) => setSortDir(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600 text-sm"
+                >
+                  <option value="asc">Asc</option>
+                  <option value="desc">Desc</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="mt-6 overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead>
-              <tr className="bg-slate-50 text-slate-700 border-b border-slate-200">
-                <th className="px-3 py-2 font-semibold">ID</th>
-                <th className="px-3 py-2 font-semibold">Nom</th>
-                <th className="px-3 py-2 font-semibold">Référence</th>
-                <th className="px-3 py-2 font-semibold">Catégorie</th>
-                <th className="px-3 py-2 font-semibold">EAN</th>
-                <th className="px-3 py-2 font-semibold">IFLS</th>
-                <th className="px-3 py-2 font-semibold">Qté/jour</th>
-                <th className="px-3 py-2 font-semibold">Prix achat</th>
-                <th className="px-3 py-2 font-semibold">Unités/carton</th>
-                <th className="px-3 py-2 font-semibold">Stock</th>
-                <th className="px-3 py-2 font-semibold">Prix de vente</th>
-                <th className="px-3 py-2 font-semibold">Actif</th>
-                <th className="px-3 py-2 font-semibold">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td className="px-3 py-4 text-center" colSpan={13}>
-                    Chargement des produits...
-                  </td>
+          <div className="mt-6 overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-slate-700 border-b border-slate-200">
+                  <th className="px-3 py-2 font-semibold">ID</th>
+                  <th className="px-3 py-2 font-semibold">Nom</th>
+                  <th className="px-3 py-2 font-semibold">Référence</th>
+                  <th className="px-3 py-2 font-semibold">Catégorie</th>
+                  <th className="px-3 py-2 font-semibold">EAN</th>
+                  <th className="px-3 py-2 font-semibold">IFLS</th>
+                  <th className="px-3 py-2 font-semibold">Qté/jour</th>
+                  <th className="px-3 py-2 font-semibold">Prix achat</th>
+                  <th className="px-3 py-2 font-semibold">Unités/carton</th>
+                  <th className="px-3 py-2 font-semibold">Stock</th>
+                  <th className="px-3 py-2 font-semibold">Prix de vente</th>
+                  <th className="px-3 py-2 font-semibold">Actif</th>
+                  <th className="px-3 py-2 font-semibold">Actions</th>
                 </tr>
-              ) : filteredProduits.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-4 text-center text-slate-500" colSpan={13}>
-                    Aucun produit trouvé.
-                  </td>
-                </tr>
-              ) : (
-                filteredProduits.map((produit) => (
-                  <tr
-                    key={produit.id}
-                    className="border-b last:border-0 border-slate-100 hover:bg-slate-50"
-                  >
-                    <td className="px-3 py-2 text-slate-700">{produit.id}</td>
-                    <td className="px-3 py-2 text-slate-900 font-medium">
-                      {produit.nom}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600">
-                      {produit.reference || '-'}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600">
-                      {produit.categorieRef?.nom || produit.categorie || '-'}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600">
-                      {produit.ean13 || '-'}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600">
-                      {produit.ifls || '-'}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600">
-                      {produit.quantiteJour ?? '-'}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600">
-                      {produit.prixAchat !== undefined && produit.prixAchat !== null
-                        ? `${priceFormatter.format(Number(produit.prixAchat))} €`
-                        : '-'}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600">
-                      {produit.unitesCarton ?? '-'}
-                    </td>
-                    <td className="px-3 py-2 text-slate-900">
-                      {stockByProduitId[produit.id] ?? '-'}
-                    </td>
-                    <td className="px-3 py-2 text-slate-900">
-                      {produit.prixVente !== undefined && produit.prixVente !== null
-                        ? `${priceFormatter.format(produit.prixVente)} €`
-                        : '-'}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
-                          produit.actif
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-slate-200 text-slate-700'
-                        }`}
-                      >
-                        {produit.actif ? 'Oui' : 'Non'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex flex-col gap-1">
-                        <button
-                          onClick={() => {
-                            setEditingId(produit.id)
-                            setFormData({
-                              nom: produit.nom || '',
-                              reference: produit.reference || '',
-                              categorie: produit.categorie || '',
-                              prixVente: produit.prixVente || '',
-                              ean13: produit.ean13 || '',
-                              ifls: produit.ifls || '',
-                              quantiteJour: produit.quantiteJour ?? '',
-                              prixAchat: produit.prixAchat ?? '',
-                              unitesCarton: produit.unitesCarton ?? '',
-                              categorieId: produit.categorieRef?.id || '',
-                            })
-                          }}
-                          className="text-sm font-semibold text-slate-700 hover:text-slate-900"
-                        >
-                          Modifier
-                        </button>
-                        <button
-                          onClick={() => toggleActif(produit)}
-                          disabled={toggleLoadingId === produit.id}
-                          className="text-sm font-semibold text-emerald-700 hover:text-emerald-900 disabled:opacity-50"
-                        >
-                          {toggleLoadingId === produit.id
-                            ? 'Mise à jour...'
-                            : produit.actif
-                              ? 'Désactiver'
-                              : 'Activer'}
-                        </button>
-                      </div>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td className="px-3 py-4 text-center" colSpan={13}>
+                      Chargement des produits...
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : filteredProduits.length === 0 ? (
+                  <tr>
+                    <td className="px-3 py-4 text-center text-slate-500" colSpan={13}>
+                      Aucun produit trouvé.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredProduits.map((produit) => (
+                    <tr
+                      key={produit.id}
+                      className="border-b last:border-0 border-slate-100 hover:bg-slate-50"
+                    >
+                      <td className="px-3 py-2 text-slate-700">{produit.id}</td>
+                      <td className="px-3 py-2 text-slate-900 font-medium">
+                        {produit.nom}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">
+                        {produit.reference || '-'}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">
+                        {produit.categorieRef?.nom || produit.categorie || '-'}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">
+                        {produit.ean13 || '-'}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">
+                        {produit.ifls || '-'}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">
+                        {produit.quantiteJour ?? '-'}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">
+                        {produit.prixAchat !== undefined && produit.prixAchat !== null
+                          ? `${priceFormatter.format(Number(produit.prixAchat))} €`
+                          : '-'}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">
+                        {produit.unitesCarton ?? '-'}
+                      </td>
+                      <td className="px-3 py-2 text-slate-900">
+                        {stockByProduitId[produit.id] ?? '-'}
+                      </td>
+                      <td className="px-3 py-2 text-slate-900">
+                        {produit.prixVente !== undefined && produit.prixVente !== null
+                          ? `${priceFormatter.format(produit.prixVente)} €`
+                          : '-'}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span
+                          className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
+                            produit.actif
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-slate-200 text-slate-700'
+                          }`}
+                        >
+                          {produit.actif ? 'Oui' : 'Non'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-col gap-1">
+                          <button
+                            onClick={() => {
+                              setEditingId(produit.id)
+                              setFormData({
+                                nom: produit.nom || '',
+                                reference: produit.reference || '',
+                                categorie: produit.categorie || '',
+                                prixVente: produit.prixVente || '',
+                                ean13: produit.ean13 || '',
+                                ifls: produit.ifls || '',
+                                quantiteJour: produit.quantiteJour ?? '',
+                                prixAchat: produit.prixAchat ?? '',
+                                unitesCarton: produit.unitesCarton ?? '',
+                                categorieId: produit.categorieRef?.id || '',
+                              })
+                              setActiveTab('add')
+                            }}
+                            className="text-sm font-semibold text-slate-700 hover:text-slate-900"
+                          >
+                            Modifier
+                          </button>
+                          <button
+                            onClick={() => toggleActif(produit)}
+                            disabled={toggleLoadingId === produit.id}
+                            className="text-sm font-semibold text-emerald-700 hover:text-emerald-900 disabled:opacity-50"
+                          >
+                            {toggleLoadingId === produit.id
+                              ? 'Mise à jour...'
+                              : produit.actif
+                                ? 'Désactiver'
+                                : 'Activer'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+      {activeTab === 'add' && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold text-slate-900">
             {editingId ? 'Modifier un produit' : 'Ajouter un produit'}
@@ -560,18 +682,7 @@ function Produits() {
               type="button"
               onClick={() => {
                 setEditingId(null)
-                setFormData({
-                  nom: '',
-                  reference: '',
-                  categorie: '',
-                  prixVente: '',
-                  ean13: '',
-                  ifls: '',
-                  quantiteJour: '',
-                  prixAchat: '',
-                  unitesCarton: '',
-                  categorieId: '',
-                })
+                setFormData(initialForm)
               }}
               className="text-sm text-slate-600 hover:text-slate-800"
             >
@@ -582,6 +693,54 @@ function Produits() {
         <p className="text-slate-500 text-sm mb-4">
           Renseignez les informations du produit à {editingId ? 'mettre à jour' : 'créer'}.
         </p>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={downloadExcel}
+              className="inline-flex items-center rounded-lg bg-slate-800 hover:bg-slate-900 text-white px-3 py-2 text-sm font-semibold transition"
+            >
+              Télécharger Excel produits
+            </button>
+            <div className="text-xs text-slate-500">
+              Exportez la liste actuelle, modifiez-la, puis réimportez-la ci-dessous.
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <input
+              type="file"
+              accept=".xlsx"
+              onChange={(e) =>
+                setImportState((prev) => ({ ...prev, file: e.target.files?.[0] || null, error: '', result: null }))
+              }
+              className="text-xs"
+            />
+            <button
+              type="button"
+              onClick={importExcel}
+              disabled={importState.loading}
+              className="inline-flex items-center rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-2 text-sm font-semibold transition disabled:opacity-60"
+            >
+              {importState.loading ? 'Import...' : 'Importer Excel'}
+            </button>
+          </div>
+        </div>
+        {importState.error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm mb-3">
+            {importState.error}
+          </div>
+        )}
+        {importState.result && (
+          <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded-lg text-sm mb-3">
+            Import terminé : {importState.result.updated || 0} mis à jour, {importState.result.created || 0} créés.
+            {importState.result.errors?.length > 0 && (
+              <div className="text-xs text-amber-700 mt-1">
+                {importState.result.errors.slice(0, 3).join(' | ')}
+                {importState.result.errors.length > 3 ? ' ...' : ''}
+              </div>
+            )}
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -727,11 +886,12 @@ function Produits() {
                   : 'Ajout en cours...'
                 : editingId
                   ? 'Mettre à jour'
-                  : 'Ajouter'}
+                : 'Ajouter'}
             </button>
           </div>
         </form>
       </div>
+      )}
     </div>
   )
 }

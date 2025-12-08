@@ -585,6 +585,7 @@ function Commandes() {
                     <th className="px-3 py-2 text-left font-semibold">
                       Saisir reçues (cartons)
                     </th>
+                    <th className="px-3 py-2 text-left font-semibold">Tout reçu ?</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -626,6 +627,20 @@ function Commandes() {
                               className="w-24 border border-slate-300 rounded px-2 py-1 text-sm"
                               placeholder="Cartons"
                             />
+                          </td>
+                          <td className="px-3 py-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!l.unitesParCarton || l.unitesParCarton <= 0) return
+                                const restant = Math.max(0, l.unites - l.unitesRecues)
+                                const cartons = Math.ceil(restant / l.unitesParCarton)
+                                handleReceptionChange(c.id, l.id, cartons)
+                              }}
+                              className="text-xs font-semibold text-emerald-700 hover:text-emerald-900"
+                            >
+                              Tout reçu
+                            </button>
                           </td>
                         </tr>
                       ))}
