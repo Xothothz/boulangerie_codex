@@ -163,7 +163,7 @@ function Dashboard() {
               Tableau de bord
             </h2>
             <p className="text-slate-500 text-sm">
-              Synthèse ventes / pertes / marge sur la période sélectionnée. {periodeLabel}
+              Synthèse mises en vente / pertes / marge sur la période sélectionnée. {periodeLabel}
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
@@ -225,11 +225,17 @@ function Dashboard() {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-4 mt-6">
+        <div className="grid gap-4 md:grid-cols-5 lg:grid-cols-5 mt-6">
           <Card
-            title="Ventes (unités)"
+            title="Mises en vente (unités)"
             value={numberFmt.format(stats?.totals?.ventes || 0)}
-            hint="Somme des sorties Vente"
+            hint="Somme des mises en vente"
+            accent="emerald"
+          />
+          <Card
+            title="Vendus estimés (unités)"
+            value={numberFmt.format(stats?.totals?.vendus || 0)}
+            hint="Mises en vente - pertes"
             accent="emerald"
           />
           <Card
@@ -241,7 +247,7 @@ function Dashboard() {
           <Card
             title="Marge estimée (€)"
             value={`${moneyFmt.format(stats?.totals?.margeEstimee || 0)} €`}
-            hint="(Prix vente - achat) x quantités vendues"
+            hint="(PV x vendus) - (PA x mises en vente)"
             accent="slate"
           />
           <Card
@@ -256,7 +262,7 @@ function Dashboard() {
           <div className="border border-slate-200 rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold text-slate-900">
-                Ventes / Pertes par jour
+                Mises en vente / Pertes par jour
               </h3>
               <p className="text-xs text-slate-500">Période sélectionnée</p>
             </div>
@@ -265,7 +271,7 @@ function Dashboard() {
                 <thead>
                   <tr className="bg-slate-50 text-slate-700 border-b border-slate-200">
                     <th className="px-3 py-2 text-left font-semibold">Date</th>
-                    <th className="px-3 py-2 text-left font-semibold">Ventes</th>
+                    <th className="px-3 py-2 text-left font-semibold">Mises en vente</th>
                     <th className="px-3 py-2 text-left font-semibold">Pertes</th>
                     <th className="px-3 py-2 text-left font-semibold">Graph</th>
                   </tr>
@@ -321,12 +327,12 @@ function Dashboard() {
           <div className="border border-slate-200 rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold text-slate-900">
-                Top ventes (unités)
+                Top vendus (est.) (unités)
               </h3>
               <p className="text-xs text-slate-500">Période sélectionnée</p>
             </div>
             {(!stats?.topVentes || stats.topVentes.length === 0) && (
-              <p className="text-sm text-slate-500">Aucune vente sur la période.</p>
+              <p className="text-sm text-slate-500">Aucun produit vendu estimé sur la période.</p>
             )}
             <div className="space-y-3">
               {stats?.topVentes?.map((p) => (

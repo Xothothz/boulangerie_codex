@@ -33,7 +33,10 @@ async function applyInventaire(lignes, date, resolvedMagasinId, utilisateurId) {
     const stocksGrouped = await tx.mouvementStock.groupBy({
       by: ['produitId'],
       _sum: { quantite: true },
-      where: { produitId: { in: produitIds } },
+      where: {
+        produitId: { in: produitIds },
+        NOT: { nature: 'PERTE' }, // les pertes ne doivent pas impacter le stock calculé
+      },
     });
     const stockMap = Object.fromEntries(
       stocksGrouped.map((g) => [g.produitId, g._sum.quantite || 0]),
@@ -608,7 +611,10 @@ router.get('/produits', async (req, res) => {
     const grouped = await prisma.mouvementStock.groupBy({
       by: ['produitId'],
       _sum: { quantite: true },
-      where: { produitId: { in: produitIds } },
+      where: {
+        produitId: { in: produitIds },
+        NOT: { nature: 'PERTE' },
+      },
     });
 
     const stockMap = Object.fromEntries(
@@ -679,7 +685,8 @@ router.get('/mouvements-semaine', async (req, res) => {
     const { days } = getWeekDateRange(sem);
     const start = new Date(days[0]);
     const end = new Date(days[6]);
-    end.setHours(23, 59, 59, 999);
+    start.setUTCHours(0, 0, 0, 0);
+    end.setUTCHours(23, 59, 59, 999);
     const nature = type === 'ventes' ? 'VENTE' : 'PERTE';
 
     const mouvements = await prisma.mouvementStock.findMany({
@@ -758,9 +765,9 @@ router.post('/mouvements-semaine', async (req, res) => {
 
     const dayRanges = days.map((d) => {
       const start = new Date(d);
-      start.setHours(0, 0, 0, 0);
+      start.setUTCHours(0, 0, 0, 0);
       const end = new Date(d);
-      end.setHours(23, 59, 59, 999);
+      end.setUTCHours(23, 59, 59, 999);
       return { start, end, key: d.toISOString().slice(0, 10) };
     });
 
@@ -823,7 +830,10 @@ router.get('/inventaire-feuille-excel', requirePermission('inventaire:export'), 
     const grouped = await prisma.mouvementStock.groupBy({
       by: ['produitId'],
       _sum: { quantite: true },
-      where: { produitId: { in: produitIds } },
+      where: {
+        produitId: { in: produitIds },
+        NOT: { nature: 'PERTE' },
+      },
     });
     const stockMap = Object.fromEntries(
       grouped.map((g) => [g.produitId, g._sum.quantite || 0]),
@@ -877,7 +887,10 @@ router.get('/inventaire-feuille-pdf', requirePermission('inventaire:export'), as
     const grouped = await prisma.mouvementStock.groupBy({
       by: ['produitId'],
       _sum: { quantite: true },
-      where: { produitId: { in: produitIds } },
+      where: {
+        produitId: { in: produitIds },
+        NOT: { nature: 'PERTE' },
+      },
     });
     const stockMap = Object.fromEntries(
       grouped.map((g) => [g.produitId, g._sum.quantite || 0]),

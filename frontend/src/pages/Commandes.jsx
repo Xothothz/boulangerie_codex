@@ -333,7 +333,7 @@ function Commandes() {
               Commande automatique
             </h2>
             <p className="text-sm text-slate-500">
-              Calcul basée sur stocks, ventes/pertes semaine, en attente, cartons.
+              Calcul basée sur stocks, mises en vente/pertes semaine, en attente, cartons.
             </p>
           </div>
           <div className="flex items-center gap-3">

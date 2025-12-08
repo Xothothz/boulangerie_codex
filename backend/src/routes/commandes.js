@@ -153,7 +153,10 @@ async function fetchStocksByProduit(magasinId) {
   const grouped = await prisma.mouvementStock.groupBy({
     by: ['produitId'],
     _sum: { quantite: true },
-    where: { produitId: { in: produits.map((p) => p.id) } },
+    where: {
+      produitId: { in: produits.map((p) => p.id) },
+      NOT: { nature: 'PERTE' }, // les pertes ne déstockent pas
+    },
   });
   return Object.fromEntries(grouped.map((g) => [g.produitId, g._sum.quantite || 0]));
 }

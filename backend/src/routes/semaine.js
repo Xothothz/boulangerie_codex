@@ -105,7 +105,8 @@ function excelColor(hex) {
  * Body attendu : fichier Excel multipart/form-data sous le champ "file".
  */
 function buildCommentaire(typeLabel, jour) {
-  return `Import Excel ${typeLabel} – ${jour}`;
+  const label = typeLabel === 'ventes' ? 'mises en vente' : 'pertes';
+  return `Import Excel ${label} – ${jour}`;
 }
 
 function formatDate(d) {
@@ -199,9 +200,9 @@ async function importExcel(req, res, typeLabel) {
         if (!quantite || quantite <= 0) continue;
 
         const startDay = new Date(days[i]);
-        startDay.setHours(0, 0, 0, 0);
+        startDay.setUTCHours(0, 0, 0, 0);
         const endDay = new Date(days[i]);
-        endDay.setHours(23, 59, 59, 999);
+        endDay.setUTCHours(23, 59, 59, 999);
 
         // Supprime les mouvements existants pour cette journée / produit / nature
         await prisma.mouvementStock.deleteMany({
@@ -553,11 +554,11 @@ router.get('/feuille-pdf', async (req, res) => {
 });
 
 const feuilleTypes = [
-  { key: 'ventes', label: 'VENTES' },
-  { key: 'pertes', label: 'PERTES' },
+  { key: 'ventes', label: 'Mises en vente', fileSuffix: 'MISES_EN_VENTE' },
+  { key: 'pertes', label: 'Pertes', fileSuffix: 'PERTES' },
 ];
 
-feuilleTypes.forEach(({ key, label }) => {
+feuilleTypes.forEach(({ key, label, fileSuffix }) => {
   const exportCode = key === 'ventes' ? 'ventes:export' : 'pertes:export';
 
   router.get(`/feuille-excel-${key}`, requirePermission(exportCode), async (req, res) => {
@@ -606,7 +607,7 @@ feuilleTypes.forEach(({ key, label }) => {
 
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="Feuille_Semaine_${sem}_${label}.xlsx"`,
+        `attachment; filename="Feuille_Semaine_${sem}_${fileSuffix}.xlsx"`,
       );
       res.setHeader(
         'Content-Type',
@@ -664,7 +665,7 @@ feuilleTypes.forEach(({ key, label }) => {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="Feuille_Semaine_${sem}_${label}.pdf"`,
+        `attachment; filename="Feuille_Semaine_${sem}_${fileSuffix}.pdf"`,
       );
 
       doc.pipe(res);

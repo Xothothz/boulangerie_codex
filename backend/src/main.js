@@ -49,6 +49,7 @@ app.use('/stock', authMiddleware, stockRouter);
 app.use('/prix', authMiddleware, prixRouter);
 app.use('/semaine', authMiddleware, semaineRouter);
 app.use('/ventes', authMiddleware, ventesRouter);
+app.use('/mises-en-vente', authMiddleware, ventesRouter); // alias plus explicite
 app.use('/categories', authMiddleware, categoriesRouter);
 app.use('/stats', authMiddleware, statsRouter);
 app.use('/commandes', authMiddleware, commandesRouter);

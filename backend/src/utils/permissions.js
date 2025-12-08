@@ -16,13 +16,13 @@ export const PERMISSIONS = [
   { code: 'inventaire:export', label: 'Exporter une feuille ou un PDF d’inventaire', category: 'Inventaire' },
 
   // Ventes / pertes hebdo
-  { code: 'ventes:record', label: 'Enregistrer une vente', category: 'Ventes/Pertes' },
+  { code: 'ventes:record', label: 'Enregistrer une mise en vente', category: 'Ventes/Pertes' },
   { code: 'pertes:record', label: 'Enregistrer une perte', category: 'Ventes/Pertes' },
-  { code: 'ventes:import', label: 'Importer une feuille ventes', category: 'Ventes/Pertes' },
+  { code: 'ventes:import', label: 'Importer une feuille mises en vente', category: 'Ventes/Pertes' },
   { code: 'pertes:import', label: 'Importer une feuille pertes', category: 'Ventes/Pertes' },
-  { code: 'ventes:grid:update', label: 'Modifier la grille hebdo ventes', category: 'Ventes/Pertes' },
+  { code: 'ventes:grid:update', label: 'Modifier la grille hebdo mises en vente', category: 'Ventes/Pertes' },
   { code: 'pertes:grid:update', label: 'Modifier la grille hebdo pertes', category: 'Ventes/Pertes' },
-  { code: 'ventes:export', label: 'Télécharger une feuille ventes', category: 'Ventes/Pertes' },
+  { code: 'ventes:export', label: 'Télécharger une feuille mises en vente', category: 'Ventes/Pertes' },
   { code: 'pertes:export', label: 'Télécharger une feuille pertes', category: 'Ventes/Pertes' },
 
   // Commandes
@@ -84,7 +84,7 @@ export const PERMISSION_GROUPS = [
   },
   {
     code: 'group:ventes-pertes',
-    label: 'Ventes / Pertes hebdo',
+    label: 'Mises en vente / Pertes hebdo',
     permissions: [
       'ventes:record',
       'pertes:record',

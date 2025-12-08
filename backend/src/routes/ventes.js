@@ -7,12 +7,12 @@ const router = express.Router();
 
 /**
  * POST /ventes
- * Enregistre une vente (mouvement SORTIE négatif).
+ * Enregistre une mise en vente (mouvement SORTIE négatif).
  * Body JSON :
  * {
  *   "produitId": 1,
  *   "quantite": 5,
- *   "commentaire": "Vente du jour",
+ *   "commentaire": "Mise en vente du jour",
  *   "date": "2025-12-06T10:00:00.000Z" (optionnel)
  * }
  */
@@ -52,7 +52,7 @@ router.post('/', requirePermission('ventes:record'), async (req, res) => {
         produitId: Number(produitId),
         type: 'SORTIE',
         quantite: -q,
-        commentaire: commentaire || 'Vente',
+        commentaire: commentaire || 'Mise en vente',
         nature: 'VENTE',
         date: date ? new Date(date) : undefined,
       },

@@ -5,7 +5,7 @@ import { useMagasin } from '../context/MagasinContext'
 
 const typeOptions = [
   { value: 'all', label: 'Tous' },
-  { value: 'VENTE', label: 'Ventes' },
+  { value: 'VENTE', label: 'Mises en vente' },
   { value: 'PERTE', label: 'Pertes' },
   { value: 'INVENTAIRE', label: 'Inventaire' },
   { value: 'RECEPTION', label: 'Entrées' },
@@ -14,7 +14,7 @@ const typeOptions = [
 const natureLabel = (nature) => {
   switch (nature) {
     case 'VENTE':
-      return 'Vente'
+      return 'Mise en vente'
     case 'PERTE':
       return 'Perte'
     case 'INVENTAIRE':
@@ -202,7 +202,7 @@ function Historique() {
                 : 'bg-slate-100 text-slate-700'
             }`}
           >
-            Ventes / pertes
+            Mises en vente / pertes
           </button>
           <button
             onClick={() => setTab('commandes')}
@@ -221,7 +221,7 @@ function Historique() {
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <h2 className="text-xl font-semibold text-slate-900">
-                  Historique ventes/pertes
+                  Historique mises en vente/pertes
                 </h2>
                 <p className="text-sm text-slate-500">
                   Sélectionnez un produit (actif ou non) pour afficher ses mouvements de sortie.

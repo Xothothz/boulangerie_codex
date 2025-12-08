@@ -86,43 +86,30 @@ router.get('/overview', requirePermission('stats:read'), async (req, res) => {
       },
     });
 
-    const totals = { ventes: 0, pertes: 0, margeEstimee: 0 };
     const dailyMap = Object.fromEntries(
       dayList.map((d) => [dateKey(d), { date: dateKey(d), ventes: 0, pertes: 0 }]),
     );
 
-    const topVMap = new Map(); // ventes
-    const topPMap = new Map(); // pertes
+    const produitStats = new Map(); // { ventes, pertes, prixVente, prixAchat, nom, reference }
 
     for (const m of mouvements) {
       const qty = Math.abs(Number(m.quantite) || 0);
       const key = dateKey(new Date(m.date));
-
-      if (m.nature === 'VENTE') {
-        totals.ventes += qty;
-        const prixVente = Number(m.produit?.prixVente || 0);
-        const prixAchat = Number(m.produit?.prixAchat || 0);
-        totals.margeEstimee += qty * (prixVente - prixAchat);
-
-        const currentTop = topVMap.get(m.produitId) || {
+      const entry =
+        produitStats.get(m.produitId) ||
+        {
           produitId: m.produitId,
           nom: m.produit?.nom || 'Produit',
           reference: m.produit?.reference || null,
-          quantite: 0,
+          prixVente: Number(m.produit?.prixVente || 0),
+          prixAchat: Number(m.produit?.prixAchat || 0),
+          ventes: 0,
+          pertes: 0,
         };
-        currentTop.quantite += qty;
-        topVMap.set(m.produitId, currentTop);
-      } else if (m.nature === 'PERTE') {
-        totals.pertes += qty;
-        const currentTop = topPMap.get(m.produitId) || {
-          produitId: m.produitId,
-          nom: m.produit?.nom || 'Produit',
-          reference: m.produit?.reference || null,
-          quantite: 0,
-        };
-        currentTop.quantite += qty;
-        topPMap.set(m.produitId, currentTop);
-      }
+
+      if (m.nature === 'VENTE') entry.ventes += qty;
+      if (m.nature === 'PERTE') entry.pertes += qty;
+      produitStats.set(m.produitId, entry);
 
       if (dailyMap[key]) {
         if (m.nature === 'VENTE') dailyMap[key].ventes += qty;
@@ -130,12 +117,42 @@ router.get('/overview', requirePermission('stats:read'), async (req, res) => {
       }
     }
 
-    const topVentes = Array.from(topVMap.values())
+    const totals = { ventes: 0, pertes: 0, vendus: 0, margeEstimee: 0 };
+    const topVentesRaw = [];
+    const topPertes = [];
+
+    for (const ps of produitStats.values()) {
+      const vendu = Math.max(ps.ventes - ps.pertes, 0);
+      totals.ventes += ps.ventes;
+      totals.pertes += ps.pertes;
+      totals.vendus += vendu;
+      const pv = Number(ps.prixVente || 0);
+      const pa = Number(ps.prixAchat || 0);
+      totals.margeEstimee += vendu * pv - ps.ventes * pa;
+
+      topVentesRaw.push({
+        produitId: ps.produitId,
+        nom: ps.nom,
+        reference: ps.reference,
+        quantite: vendu,
+        chiffreAffaires: vendu * pv,
+      });
+      if (ps.pertes > 0) {
+        topPertes.push({
+          produitId: ps.produitId,
+          nom: ps.nom,
+          reference: ps.reference,
+          quantite: ps.pertes,
+        });
+      }
+    }
+
+    const topVentes = topVentesRaw
+      .filter((t) => t.quantite > 0)
       .sort((a, b) => b.quantite - a.quantite)
       .slice(0, 5);
-    const topPertes = Array.from(topPMap.values())
-      .sort((a, b) => b.quantite - a.quantite)
-      .slice(0, 5);
+    topPertes.sort((a, b) => b.quantite - a.quantite);
+    const topPertesSlice = topPertes.slice(0, 5);
 
     // Stock actuel (ruptures)
     const produits = await prisma.produit.findMany({
@@ -148,7 +165,10 @@ router.get('/overview', requirePermission('stats:read'), async (req, res) => {
       const grouped = await prisma.mouvementStock.groupBy({
         by: ['produitId'],
         _sum: { quantite: true },
-        where: { produitId: { in: produitIds } },
+        where: {
+          produitId: { in: produitIds },
+          NOT: { nature: 'PERTE' }, // les pertes ne doivent pas baisser le stock
+        },
       });
       const stockMap = Object.fromEntries(
         grouped.map((g) => [g.produitId, g._sum.quantite || 0]),
@@ -169,7 +189,7 @@ router.get('/overview', requirePermission('stats:read'), async (req, res) => {
       totals,
       daily: Object.values(dailyMap),
       topVentes,
-      topPertes,
+      topPertes: topPertesSlice,
       stock,
     });
   } catch (err) {

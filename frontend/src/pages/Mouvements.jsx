@@ -33,6 +33,8 @@ function Mouvements() {
   const [tab, setTab] = useState('ventes')
   const [grid, setGrid] = useState({ days: [], lignes: [] })
   const [gridLoading, setGridLoading] = useState(false)
+  const tabLabel = tab === 'ventes' ? 'mises en vente' : 'pertes'
+  const tabLabelTitle = tab === 'ventes' ? 'Mises en vente' : 'Pertes'
 
   const rowBg = (hex) => {
     if (!hex) return undefined;
@@ -78,7 +80,7 @@ function Mouvements() {
     setActionError('')
     setActionMessage('')
     if (!venteForm.produitId || !venteForm.quantite) {
-      setActionError('Produit et quantité sont obligatoires pour une vente.')
+      setActionError('Produit et quantité sont obligatoires pour une mise en vente.')
       return
     }
     setSubmitting(true)
@@ -86,7 +88,7 @@ function Mouvements() {
       const payload = {
         produitId: Number(venteForm.produitId),
         quantite: Number(venteForm.quantite),
-        commentaire: venteForm.commentaire.trim() || 'Vente',
+        commentaire: venteForm.commentaire.trim() || 'Mise en vente',
         date: venteForm.date || undefined,
         magasinId: selectedMagasinId,
       }
@@ -104,13 +106,13 @@ function Mouvements() {
       }
       if (!response.ok) {
         const errorText = await response.text()
-        throw new Error(errorText || 'Échec de l’enregistrement de la vente.')
+        throw new Error(errorText || 'Échec de l’enregistrement de la mise en vente.')
       }
-      setActionMessage('Vente enregistrée.')
+      setActionMessage('Mise en vente enregistrée.')
       setVenteForm({ produitId: '', quantite: '', commentaire: '', date: '' })
     } catch (err) {
       console.error('Erreur POST /ventes', err)
-      setActionError(err.message || 'Impossible d’enregistrer la vente.')
+      setActionError(err.message || 'Impossible d’enregistrer la mise en vente.')
     } finally {
       setSubmitting(false)
     }
@@ -187,10 +189,11 @@ function Mouvements() {
         throw new Error(errorText || 'Échec du téléchargement du fichier.')
       }
       const blob = await response.blob()
+      const kindLabel = kind === 'ventes' ? 'Mises_en_vente' : 'Pertes'
       const fallbackName =
         format === 'excel'
-          ? `Feuille_Semaine_${selectedWeek}_${kind}.xlsx`
-          : `Feuille_Semaine_${selectedWeek}_${kind}.pdf`
+          ? `Feuille_Semaine_${selectedWeek}_${kindLabel}.xlsx`
+          : `Feuille_Semaine_${selectedWeek}_${kindLabel}.pdf`
       const filename = getFilenameFromDisposition(
         response.headers.get('content-disposition'),
         fallbackName,
@@ -417,7 +420,7 @@ function Mouvements() {
               Mouvements de stock
             </h2>
             <p className="text-slate-500 text-sm">
-              Enregistrer ventes/pertes et importer les feuilles hebdo.
+              Enregistrer mises en vente/pertes et importer les feuilles hebdo.
             </p>
           </div>
           <button
@@ -435,7 +438,7 @@ function Mouvements() {
             }`}
             onClick={() => setTab('ventes')}
           >
-            Ventes
+            Mises en vente
           </button>
           <button
             className={`px-4 py-2 rounded-lg text-sm font-semibold ${
@@ -470,13 +473,13 @@ function Mouvements() {
                     onClick={() => triggerDownload('excel', tab)}
                     className="rounded-lg bg-slate-800 hover:bg-slate-900 text-white px-3 py-2 text-sm font-semibold transition"
                   >
-                    Excel {tab}
+                    Excel {tabLabelTitle}
                   </button>
                   <button
                     onClick={() => triggerDownload('pdf', tab)}
                     className="rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 px-3 py-2 text-sm font-semibold transition"
                   >
-                    PDF {tab}
+                    PDF {tabLabelTitle}
                   </button>
                 </div>
               </div>
@@ -484,7 +487,7 @@ function Mouvements() {
             <div className="grid md:grid-cols-2 gap-3 flex-1">
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-slate-700">
-                  Import Excel {tab}
+                  Import Excel {tabLabelTitle}
                 </label>
                 <input
                   type="file"
@@ -501,7 +504,7 @@ function Mouvements() {
                   disabled={importState[tab].loading}
                   className="rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-2 text-sm font-semibold transition disabled:opacity-60"
                 >
-                  {importState[tab].loading ? 'Import...' : `Importer ${tab}`}
+                  {importState[tab].loading ? 'Import...' : `Importer ${tabLabel}`}
                 </button>
                 {importState[tab].result && (
                   <p className="text-xs text-emerald-700">
@@ -517,7 +520,7 @@ function Mouvements() {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold text-slate-900">
-                Saisie hebdomadaire ({tab === 'ventes' ? 'Ventes' : 'Pertes'})
+                Saisie hebdomadaire ({tabLabelTitle})
               </h3>
               <p className="text-sm text-slate-500">Modifiez les quantités par jour, par produit.</p>
             </div>
@@ -586,7 +589,7 @@ function Mouvements() {
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
-            <h3 className="text-lg font-semibold text-slate-900">Saisie ventes</h3>
+            <h3 className="text-lg font-semibold text-slate-900">Saisie mises en vente</h3>
             <form onSubmit={handleVenteSubmit} className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
