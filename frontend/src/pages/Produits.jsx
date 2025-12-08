@@ -9,8 +9,8 @@ const priceFormatter = new Intl.NumberFormat('fr-FR', {
 })
 
 function Produits() {
-  const { token, logout } = useAuth()
-  const { selectedMagasinId } = useMagasin()
+  const { token, logout, user } = useAuth()
+  const { selectedMagasinId, magasins } = useMagasin()
   const [produits, setProduits] = useState([])
   const [stockByProduitId, setStockByProduitId] = useState({})
   const [loading, setLoading] = useState(false)
@@ -46,6 +46,30 @@ function Produits() {
     error: '',
     result: null,
   })
+  const [allowCustomReference, setAllowCustomReference] = useState(false)
+
+  const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN'
+
+  const magasinCode = useMemo(() => {
+    const mag = magasins.find((m) => m.id === selectedMagasinId)
+    return mag?.code || ''
+  }, [magasins, selectedMagasinId])
+
+  const slugifyReferenceBase = (value) =>
+    (value ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'PRODUIT'
+
+  const autoReferencePreview = useMemo(() => {
+    const prefix = magasinCode ? `${magasinCode}-` : ''
+    return `${prefix}${slugifyReferenceBase(formData.nom)}`
+  }, [formData.nom, magasinCode])
+
+  const referenceDisplayValue =
+    formData.reference || autoReferencePreview
 
   const fetchProduits = async () => {
     setLoading(true)
@@ -190,6 +214,7 @@ function Produits() {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target
+    if (name === 'reference' && !allowCustomReference) return
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
 
@@ -214,9 +239,15 @@ function Produits() {
       const quantiteJourParsed =
         formData.quantiteJour === '' ? null : parseInt(formData.quantiteJour, 10)
 
+      const referencePayload = allowCustomReference
+        ? formData.reference.trim() || null
+        : editingId
+          ? undefined
+          : null
+
       const payloadBase = {
         nom: formData.nom.trim(),
-        reference: formData.reference.trim() || null,
+        reference: referencePayload,
         categorie: formData.categorie.trim() || null,
         ean13: formData.ean13.trim() || null,
         ifls: formData.ifls.trim() || null,
@@ -274,6 +305,7 @@ function Produits() {
 
       setFormData(initialForm)
       setEditingId(null)
+      setAllowCustomReference(false)
       setActionMessage(
         editingId ? 'Produit mis à jour avec succès.' : 'Produit ajouté avec succès.',
       )
@@ -643,6 +675,7 @@ function Produits() {
                                 unitesCarton: produit.unitesCarton ?? '',
                                 categorieId: produit.categorieRef?.id || '',
                               })
+                              setAllowCustomReference(false)
                               setActiveTab('add')
                             }}
                             className="text-sm font-semibold text-slate-700 hover:text-slate-900"
@@ -683,6 +716,7 @@ function Produits() {
               onClick={() => {
                 setEditingId(null)
                 setFormData(initialForm)
+                setAllowCustomReference(false)
               }}
               className="text-sm text-slate-600 hover:text-slate-800"
             >
@@ -759,13 +793,34 @@ function Produits() {
             <label className="block text-sm font-medium text-slate-700 mb-1">
               Référence
             </label>
-            <input
-              type="text"
-              name="reference"
-              value={formData.reference}
-              onChange={handleInputChange}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                name="reference"
+                value={referenceDisplayValue}
+                onChange={handleInputChange}
+                readOnly={!allowCustomReference}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600 disabled:cursor-not-allowed"
+              />
+              {isAdmin && (
+                <label className="flex items-center gap-2 text-xs text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={allowCustomReference}
+                    onChange={(e) => setAllowCustomReference(e.target.checked)}
+                    className="rounded border-slate-300"
+                  />
+                  Forcer la référence (admin)
+                </label>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              {allowCustomReference
+                ? 'Référence saisie manuellement (préfixée si code magasin).'
+                : `Référence générée automatiquement : ${autoReferencePreview}${
+                    formData.reference ? ` (actuelle : ${formData.reference})` : ''
+                  }`}
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">

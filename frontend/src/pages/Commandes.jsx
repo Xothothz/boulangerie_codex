@@ -209,6 +209,9 @@ function Commandes() {
   }
 
   const handleReception = async (commande) => {
+    const params = new URLSearchParams()
+    if (selectedMagasinId) params.set('magasinId', selectedMagasinId)
+    const suffix = params.toString() ? `?${params.toString()}` : ''
     const payloadLignes = (commande.lignes || [])
       .map((l) => {
         const val = receptionInputs[commande.id]?.[l.id]
@@ -223,7 +226,7 @@ function Commandes() {
       return
     }
     try {
-      const response = await fetch(`${API_URL}/commandes/${commande.id}/recevoir`, {
+      const response = await fetch(`${API_URL}/commandes/${commande.id}/recevoir${suffix}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ lignes: payloadLignes }),
@@ -245,8 +248,11 @@ function Commandes() {
   }
 
   const handleAnnuler = async (commandeId) => {
+    const params = new URLSearchParams()
+    if (selectedMagasinId) params.set('magasinId', selectedMagasinId)
+    const suffix = params.toString() ? `?${params.toString()}` : ''
     try {
-      const response = await fetch(`${API_URL}/commandes/${commandeId}/annuler`, {
+      const response = await fetch(`${API_URL}/commandes/${commandeId}/annuler${suffix}`, {
         method: 'POST',
         headers: authHeaders,
       })
@@ -267,8 +273,11 @@ function Commandes() {
   }
 
   const handleDownloadPdf = async (commandeId) => {
+    const params = new URLSearchParams()
+    if (selectedMagasinId) params.set('magasinId', selectedMagasinId)
+    const suffix = params.toString() ? `?${params.toString()}` : ''
     try {
-      const response = await fetch(`${API_URL}/commandes/${commandeId}/pdf`, {
+      const response = await fetch(`${API_URL}/commandes/${commandeId}/pdf${suffix}`, {
         headers: authHeaders,
       })
       if (response.status === 401) {

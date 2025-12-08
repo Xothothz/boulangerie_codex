@@ -10,24 +10,25 @@ export function getMagasinScope(req) {
   const bodyMagasinId =
     req.body?.magasinId !== undefined ? Number(req.body.magasinId) : undefined;
 
-  const canSelectCustom = isAdmin; // seul un admin peut choisir un magasin différent
+  const hasQueryMagasin =
+    queryMagasinId !== undefined && !Number.isNaN(queryMagasinId);
+  const hasBodyMagasin =
+    bodyMagasinId !== undefined && !Number.isNaN(bodyMagasinId);
+  const hasUserMagasin =
+    userMagasinId !== null && !Number.isNaN(userMagasinId);
 
   let resolvedMagasinId = null;
 
-  if (
-    canSelectCustom &&
-    queryMagasinId !== undefined &&
-    !Number.isNaN(queryMagasinId)
-  ) {
-    resolvedMagasinId = queryMagasinId;
-  } else if (userMagasinId !== null && !Number.isNaN(userMagasinId)) {
+  if (isAdmin) {
+    if (hasQueryMagasin) {
+      resolvedMagasinId = queryMagasinId;
+    } else if (hasBodyMagasin) {
+      resolvedMagasinId = bodyMagasinId;
+    } else if (hasUserMagasin) {
+      resolvedMagasinId = userMagasinId;
+    }
+  } else if (hasUserMagasin) {
     resolvedMagasinId = userMagasinId;
-  } else if (
-    canSelectCustom &&
-    bodyMagasinId !== undefined &&
-    !Number.isNaN(bodyMagasinId)
-  ) {
-    resolvedMagasinId = bodyMagasinId;
   }
 
   return { isAdmin, resolvedMagasinId, queryMagasinId, bodyMagasinId };

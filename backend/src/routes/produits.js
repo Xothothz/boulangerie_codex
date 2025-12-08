@@ -6,6 +6,73 @@ import xlsx from 'xlsx';
 
 const router = express.Router();
 
+function slugifyReferenceBase(value) {
+  const cleaned = (value ?? '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return cleaned || 'PRODUIT';
+}
+
+async function getMagasinCode(magasinId) {
+  if (!magasinId) return null;
+  const mag = await prisma.magasin.findUnique({
+    where: { id: magasinId },
+    select: { code: true },
+  });
+  return mag?.code || null;
+}
+
+async function computeReference({
+  reference,
+  magasinId,
+  nom,
+  allowAutogen = false,
+  excludeId,
+}) {
+  const inputProvided = reference !== undefined;
+  const trimmed = reference === undefined ? undefined : (reference ?? '').trim();
+  const code = await getMagasinCode(magasinId);
+
+  // User provided something -> on préfixe si besoin
+  if (trimmed && trimmed !== '') {
+    const prefix = code ? `${code}-` : '';
+    if (prefix && !trimmed.toUpperCase().startsWith(prefix.toUpperCase())) {
+      return `${prefix}${trimmed}`;
+    }
+    return trimmed;
+  }
+
+  // Rien fourni
+  if (!allowAutogen) {
+    return inputProvided ? null : undefined;
+  }
+
+  const baseSlug = slugifyReferenceBase(nom || 'PRODUIT');
+  const base = code ? `${code}-${baseSlug}` : baseSlug;
+  let candidate = base;
+  let suffix = 1;
+
+  // Cherche une référence libre en ajoutant un suffixe si besoin
+  while (
+    await prisma.produit.findFirst({
+      where: {
+        reference: candidate,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true },
+    })
+  ) {
+    suffix += 1;
+    candidate = `${base}-${suffix}`;
+    if (suffix > 100) break;
+  }
+
+  return candidate;
+}
+
 /**
  * GET /produits
  * Retourne les produits actifs.
@@ -113,10 +180,17 @@ router.post('/', requirePermission('produits:create'), async (req, res) => {
       categorieConnectId = cat.id;
     }
 
+    const finalReference = await computeReference({
+      reference,
+      magasinId: targetMagasinId,
+      nom,
+      allowAutogen: true,
+    });
+
     const produit = await prisma.produit.create({
       data: {
         nom,
-        reference: reference || null,
+        reference: finalReference ?? null,
         categorie: categorie || null,
         ean13: ean13 || null,
         ifls: ifls || null,
@@ -182,6 +256,14 @@ router.put('/:id', requirePermission('produits:update'), async (req, res) => {
   }
 
   try {
+    const produitScope = await prisma.produit.findUnique({
+      where: { id, ...(resolvedMagasinId ? { magasinId: resolvedMagasinId } : {}) },
+      select: { magasinId: true, nom: true },
+    });
+    if (!produitScope) {
+      return res.status(404).json({ error: 'Produit introuvable' });
+    }
+
     let categorieConnectId = undefined;
     if (categorieId !== undefined) {
       if (categorieId === null || categorieId === '') {
@@ -204,11 +286,22 @@ router.put('/:id', requirePermission('produits:update'), async (req, res) => {
       }
     }
 
+    const finalReference =
+      reference === undefined
+        ? undefined
+        : await computeReference({
+            reference,
+            magasinId: produitScope.magasinId ?? resolvedMagasinId,
+            nom: nom || produitScope.nom,
+            allowAutogen: true,
+            excludeId: id,
+          });
+
     const produit = await prisma.produit.update({
       where: { id, ...(resolvedMagasinId ? { magasinId: resolvedMagasinId } : {}) },
       data: {
         nom,
-        reference,
+        reference: finalReference,
         categorie,
         prixVente: prixVente !== undefined ? Number(prixVente) : undefined,
         prixAchat:
