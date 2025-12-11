@@ -9,6 +9,7 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const TOKEN_EXPIRATION = process.env.JWT_EXPIRATION || '12h';
+const DEV_LOGIN_ENABLED = process.env.DEV_LOGIN_ENABLED === '1';
 
 const googleClient = GOOGLE_CLIENT_ID
   ? new OAuth2Client(GOOGLE_CLIENT_ID)
@@ -114,6 +115,52 @@ router.post('/google', async (req, res) => {
   } catch (err) {
     console.error('Erreur POST /auth/google :', err);
     return res.status(401).json({ error: 'Authentification Google invalide' });
+  }
+});
+
+// ⚙️ Mode développeur : connexion sans Google (uniquement si DEV_LOGIN_ENABLED=1 et jamais en production)
+router.post('/dev-login', async (req, res) => {
+  if (!DEV_LOGIN_ENABLED || process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Route non disponible' });
+  }
+
+  const { email, nom, prenom, role = 'UTILISATEUR' } = req.body || {};
+  if (!email) {
+    return res.status(400).json({ error: 'Email requis pour le dev-login' });
+  }
+
+  try {
+    const emailLower = String(email).toLowerCase();
+    const displayName = nom || emailLower;
+
+    let user = await prisma.utilisateur.findUnique({ where: { email: emailLower } });
+    if (!user) {
+      user = await prisma.utilisateur.create({
+        data: { email: emailLower, nom: displayName, role },
+      });
+    } else if (user.nom !== displayName || (prenom && user.prenom !== prenom)) {
+      user = await prisma.utilisateur.update({
+        where: { id: user.id },
+        data: { nom: displayName, prenom: prenom || user.prenom },
+      });
+    }
+
+    const token = generateToken(user);
+    return res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        nom: user.nom,
+        prenom: user.prenom,
+        role: user.role,
+        magasinId: user.magasinId,
+        picture: null,
+      },
+    });
+  } catch (err) {
+    console.error('Erreur POST /auth/dev-login :', err);
+    return res.status(500).json({ error: 'Erreur dev-login' });
   }
 });
 

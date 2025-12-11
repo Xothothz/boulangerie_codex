@@ -4,6 +4,7 @@ import { API_URL } from '../config/api'
 import { useAuth } from '../context/AuthContext'
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
+const DEV_LOGIN_ENABLED = import.meta.env.VITE_DEV_LOGIN === '1'
 console.log('GOOGLE_CLIENT_ID (build) =', GOOGLE_CLIENT_ID)
 
 function Login() {
@@ -11,6 +12,9 @@ function Login() {
   const { login, token } = useAuth()
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [devEmail, setDevEmail] = useState('')
+  const [devNom, setDevNom] = useState('')
+  const [devLoading, setDevLoading] = useState(false)
 
   useEffect(() => {
     if (token) {
@@ -52,7 +56,8 @@ function Login() {
   )
 
   useEffect(() => {
-    if (!GOOGLE_CLIENT_ID) {
+    // Si Google n’est pas configuré et qu’on n’est pas en mode dev, on affiche l’erreur.
+    if (!GOOGLE_CLIENT_ID && !DEV_LOGIN_ENABLED) {
       setError(
         'VITE_GOOGLE_CLIENT_ID manquant. Ajoutez-le dans le fichier .env du frontend.',
       )
@@ -93,6 +98,34 @@ function Login() {
     }
   }, [handleCredentialResponse])
 
+  const handleDevLogin = async (e) => {
+    e.preventDefault()
+    setError('')
+    if (!devEmail) {
+      setError('Merci de saisir un email.')
+      return
+    }
+    setDevLoading(true)
+    try {
+      const res = await fetch(`${API_URL}/auth/dev-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: devEmail, nom: devNom }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.error || 'Échec dev-login.')
+      }
+      login(data.token, data.user)
+      navigate('/produits', { replace: true })
+    } catch (err) {
+      console.error('Erreur dev-login', err)
+      setError(err.message || 'Connexion dev impossible.')
+    } finally {
+      setDevLoading(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
       <div className="w-full max-w-md bg-white shadow-lg rounded-2xl border border-slate-200 p-8 space-y-6">
@@ -106,6 +139,11 @@ function Login() {
           <p className="text-sm text-slate-500">
             Authentification Google requise pour accéder aux données magasin.
           </p>
+          {DEV_LOGIN_ENABLED && (
+            <p className="text-xs text-amber-600 font-medium">
+              Mode développeur activé : connexion locale disponible.
+            </p>
+          )}
         </div>
 
         {error && (
@@ -123,6 +161,49 @@ function Login() {
             Utilisez votre compte Google professionnel autorisé pour continuer.
           </p>
         </div>
+
+        {DEV_LOGIN_ENABLED && (
+          <div className="border-t border-slate-200 pt-4">
+            <form className="space-y-3" onSubmit={handleDevLogin}>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  Email (dev)
+                </label>
+                <input
+                  type="email"
+                  value={devEmail}
+                  onChange={(e) => setDevEmail(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  placeholder="dev@example.com"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  Nom / prénom (optionnel)
+                </label>
+                <input
+                  type="text"
+                  value={devNom}
+                  onChange={(e) => setDevNom(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  placeholder="Jean Dupont"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={devLoading}
+                className="w-full rounded-lg bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 text-sm font-semibold disabled:opacity-70"
+              >
+                {devLoading ? 'Connexion...' : 'Connexion dev (bypass Google)'}
+              </button>
+              <p className="text-xs text-slate-500">
+                Route limitée au mode dev (DEV_LOGIN_ENABLED=1). À ne pas
+                activer en production.
+              </p>
+            </form>
+          </div>
+        )}
       </div>
     </div>
   )

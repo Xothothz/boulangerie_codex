@@ -272,6 +272,46 @@ function Commandes() {
     }
   }
 
+  const handleDownloadLog = async (commandeId) => {
+    // 1) Construire l'URL (on respecte le filtre magasin si présent)
+    const params = new URLSearchParams()
+    if (selectedMagasinId) params.set('magasinId', selectedMagasinId)
+    const suffix = params.toString() ? `?${params.toString()}` : ''
+
+    try {
+      const response = await fetch(`${API_URL}/commandes/${commandeId}/log-txt${suffix}`, {
+        headers: authHeaders,
+      })
+      if (response.status === 401) {
+        logout()
+        throw new Error('Session expirée, merci de vous reconnecter.')
+      }
+      if (!response.ok) {
+        const t = await response.text()
+        throw new Error(t || 'Erreur log commande')
+      }
+
+      // 2) Récupération du blob + extraction du nom de fichier depuis le header (si fourni)
+      const blob = await response.blob()
+      const disposition = response.headers.get('Content-Disposition') || ''
+      const match = disposition.match(/filename=\"?([^\";]+)\"?/)
+      const downloadName = match?.[1] || `Commande_${commandeId}.txt`
+
+      // 3) Déclencher le téléchargement côté navigateur
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = downloadName
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Erreur log commande', err)
+      setError(err.message || 'Impossible de télécharger le log commande.')
+    }
+  }
+
   const handleDownloadPdf = async (commandeId) => {
     const params = new URLSearchParams()
     if (selectedMagasinId) params.set('magasinId', selectedMagasinId)
@@ -567,6 +607,12 @@ function Commandes() {
                   <span className="text-xs text-slate-500">
                     Statut : {c.statut.replace('_', ' ')}
                   </span>
+                  <button
+                    onClick={() => handleDownloadLog(c.id)}
+                    className="text-sm text-sky-700 hover:text-sky-900 font-semibold"
+                  >
+                    Log commande (.txt)
+                  </button>
                   <button
                     onClick={() => handleDownloadPdf(c.id)}
                     className="text-sm text-emerald-700 hover:text-emerald-900 font-semibold"

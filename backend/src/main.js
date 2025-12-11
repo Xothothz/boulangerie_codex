@@ -22,10 +22,20 @@ import authMiddleware from './middlewares/auth.js';
 const app = express();
 const PORT = process.env.PORT || 8000;
 
-// ✅ Autoriser le frontend Vite (http://localhost:5173) à appeler l’API
+// ✅ Autoriser les origines locales (liste dans CORS_ORIGIN, séparées par des virgules)
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: 'http://localhost:5173',
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true); // autorise curl/postman
+      if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+      console.warn('CORS: origine refusée', origin);
+      return callback(new Error('Not allowed by CORS'));
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   })

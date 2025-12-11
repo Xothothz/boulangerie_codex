@@ -4,6 +4,10 @@ import bwipjs from 'bwip-js';
 import prisma from '../config/db.js';
 import { ensureMagasin, getMagasinScope } from '../utils/magasin.js';
 import { requirePermission } from '../utils/permissions.js';
+import {
+  buildCommandeLogContent,
+  buildCommandeLogFileName,
+} from '../utils/commandeLog.js';
 
 const router = express.Router();
 
@@ -911,6 +915,41 @@ router.get('/:id/pdf', requirePermission('commandes:pdf'), async (req, res) => {
   } catch (err) {
     console.error('Erreur GET /commandes/:id/pdf :', err);
     res.status(500).json({ error: 'Erreur lors de la génération du PDF.' });
+  }
+});
+
+// Téléchargement du log commande texte (.txt)
+router.get('/:id/log-txt', requirePermission('commandes:pdf'), async (req, res) => {
+  const { id } = req.params;
+  const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
+
+  if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;
+
+  try {
+    const commande = await prisma.commande.findUnique({
+      where: { id: Number(id) },
+      include: {
+        lignes: {
+          include: { produit: { select: { nom: true, ifls: true } } },
+        },
+      },
+    });
+    if (!commande) return res.status(404).json({ error: 'Commande introuvable' });
+    if (resolvedMagasinId && commande.magasinId !== resolvedMagasinId) {
+      return res.status(403).json({ error: 'Commande hors de votre magasin' });
+    }
+
+    // Construction du contenu texte (en-tête fixe + lignes produits)
+    const content = buildCommandeLogContent(commande);
+    const fileName = buildCommandeLogFileName(commande);
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', Buffer.byteLength(content, 'utf8'));
+    return res.send(content);
+  } catch (err) {
+    console.error('Erreur GET /commandes/:id/log-txt :', err);
+    res.status(500).json({ error: 'Erreur lors de la génération du log commande.' });
   }
 });
 
