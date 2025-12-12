@@ -226,11 +226,14 @@ function Commandes() {
       return
     }
     try {
-      const response = await fetch(`${API_URL}/commandes/${commande.id}/recevoir${suffix}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body: JSON.stringify({ lignes: payloadLignes }),
-      })
+      const response = await fetch(
+        `${API_URL}/commandes/${commande.id}/recevoir${suffix}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
+          body: JSON.stringify({ lignes: payloadLignes }),
+        },
+      )
       if (response.status === 401) {
         logout()
         throw new Error('Session expirée, merci de vous reconnecter.')
@@ -252,10 +255,13 @@ function Commandes() {
     if (selectedMagasinId) params.set('magasinId', selectedMagasinId)
     const suffix = params.toString() ? `?${params.toString()}` : ''
     try {
-      const response = await fetch(`${API_URL}/commandes/${commandeId}/annuler${suffix}`, {
-        method: 'POST',
-        headers: authHeaders,
-      })
+      const response = await fetch(
+        `${API_URL}/commandes/${commandeId}/annuler${suffix}`,
+        {
+          method: 'POST',
+          headers: authHeaders,
+        },
+      )
       if (response.status === 401) {
         logout()
         throw new Error('Session expirée, merci de vous reconnecter.')
@@ -273,15 +279,15 @@ function Commandes() {
   }
 
   const handleDownloadLog = async (commandeId) => {
-    // 1) Construire l'URL (on respecte le filtre magasin si présent)
     const params = new URLSearchParams()
     if (selectedMagasinId) params.set('magasinId', selectedMagasinId)
     const suffix = params.toString() ? `?${params.toString()}` : ''
 
     try {
-      const response = await fetch(`${API_URL}/commandes/${commandeId}/log-txt${suffix}`, {
-        headers: authHeaders,
-      })
+      const response = await fetch(
+        `${API_URL}/commandes/${commandeId}/log-txt${suffix}`,
+        { headers: authHeaders },
+      )
       if (response.status === 401) {
         logout()
         throw new Error('Session expirée, merci de vous reconnecter.')
@@ -291,13 +297,11 @@ function Commandes() {
         throw new Error(t || 'Erreur log commande')
       }
 
-      // 2) Récupération du blob + extraction du nom de fichier depuis le header (si fourni)
       const blob = await response.blob()
       const disposition = response.headers.get('Content-Disposition') || ''
       const match = disposition.match(/filename=\"?([^\";]+)\"?/)
       const downloadName = match?.[1] || `Commande_${commandeId}.txt`
 
-      // 3) Déclencher le téléchargement côté navigateur
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
@@ -317,9 +321,12 @@ function Commandes() {
     if (selectedMagasinId) params.set('magasinId', selectedMagasinId)
     const suffix = params.toString() ? `?${params.toString()}` : ''
     try {
-      const response = await fetch(`${API_URL}/commandes/${commandeId}/pdf${suffix}`, {
-        headers: authHeaders,
-      })
+      const response = await fetch(
+        `${API_URL}/commandes/${commandeId}/pdf${suffix}`,
+        {
+          headers: authHeaders,
+        },
+      )
       if (response.status === 401) {
         logout()
         throw new Error('Session expirée, merci de vous reconnecter.')
@@ -375,6 +382,7 @@ function Commandes() {
         </div>
       )}
 
+      {/* Bloc commande automatique */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div>
@@ -382,7 +390,8 @@ function Commandes() {
               Commande automatique
             </h2>
             <p className="text-sm text-slate-500">
-              Calcul basée sur stocks, mises en vente/pertes semaine, en attente, cartons.
+              Calcul basée sur stocks, mises en vente/pertes semaine, en
+              attente, cartons.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -408,20 +417,26 @@ function Commandes() {
               <span>
                 Date commande :{' '}
                 <strong>
-                  {new Date(proposition.dateCommande).toLocaleDateString('fr-FR')}
+                  {new Date(proposition.dateCommande).toLocaleDateString(
+                    'fr-FR',
+                  )}
                 </strong>
               </span>
               <span>
                 Livraison prévue :{' '}
                 <strong>
-                  {new Date(proposition.dateLivraisonPrevue).toLocaleDateString('fr-FR')}
+                  {new Date(
+                    proposition.dateLivraisonPrevue,
+                  ).toLocaleDateString('fr-FR')}
                 </strong>
               </span>
               {proposition.prochaineLivraison && (
                 <span>
                   Prochaine livraison après :{' '}
                   <strong>
-                    {new Date(proposition.prochaineLivraison).toLocaleDateString('fr-FR')}
+                    {new Date(
+                      proposition.prochaineLivraison,
+                    ).toLocaleDateString('fr-FR')}
                   </strong>
                 </span>
               )}
@@ -429,7 +444,9 @@ function Commandes() {
                 <span>
                   Livraison suivante :{' '}
                   <strong>
-                    {new Date(proposition.livraisonSuivante).toLocaleDateString('fr-FR')}
+                    {new Date(
+                      proposition.livraisonSuivante,
+                    ).toLocaleDateString('fr-FR')}
                   </strong>
                 </span>
               )}
@@ -437,10 +454,12 @@ function Commandes() {
                 Jours à couvrir : <strong>{proposition.joursACouvrir}</strong>
               </span>
               <span>
-                Total cartons : <strong>{propositionTotalCartons}</strong>
+                Total cartons :{' '}
+                <strong>{propositionTotalCartons}</strong>
               </span>
               <span>
-                Total unités : <strong>{propositionTotalUnites}</strong>
+                Total unités :{' '}
+                <strong>{propositionTotalUnites}</strong>
               </span>
               <span className="text-xs text-slate-500">
                 Détail : besoin = (quantiteJour × jours) – stock actuel
@@ -455,7 +474,12 @@ function Commandes() {
               >
                 <option value="">Ajouter un produit...</option>
                 {produits
-                  .filter((p) => !proposition.lignes.some((l) => l.produitId === p.id))
+                  .filter(
+                    (p) =>
+                      !proposition.lignes.some(
+                        (l) => l.produitId === p.id,
+                      ),
+                  )
                   .map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.nom} ({p.unitesCarton} u/carton)
@@ -484,21 +508,42 @@ function Commandes() {
                   <tr className="bg-slate-50 text-slate-700 border-b border-slate-200">
                     <th className="px-3 py-2 text-left font-semibold">IFLS</th>
                     <th className="px-3 py-2 text-left font-semibold">Produit</th>
-                    <th className="px-3 py-2 text-left font-semibold">Catégorie</th>
-                    <th className="px-3 py-2 text-left font-semibold">Cartons</th>
-                    <th className="px-3 py-2 text-left font-semibold">u/carton</th>
-                    <th className="px-3 py-2 text-left font-semibold">Total u.</th>
-                        <th className="px-3 py-2 text-left font-semibold">Conso estimée</th>
-                        <th className="px-3 py-2 text-left font-semibold">Besoin brut</th>
-                        <th className="px-3 py-2 text-left font-semibold">Stock</th>
-                        <th className="px-3 py-2 text-left font-semibold">En attente</th>
-                        <th className="px-3 py-2 text-left font-semibold">Action</th>
-                      </tr>
+                    <th className="px-3 py-2 text-left font-semibold">
+                      Catégorie
+                    </th>
+                    <th className="px-3 py-2 text-left font-semibold">
+                      Cartons
+                    </th>
+                    <th className="px-3 py-2 text-left font-semibold">
+                      u/carton
+                    </th>
+                    <th className="px-3 py-2 text-left font-semibold">
+                      Total u.
+                    </th>
+                    <th className="px-3 py-2 text-left font-semibold">
+                      Conso estimée
+                    </th>
+                    <th className="px-3 py-2 text-left font-semibold">
+                      Besoin brut
+                    </th>
+                    <th className="px-3 py-2 text-left font-semibold">
+                      Stock
+                    </th>
+                    <th className="px-3 py-2 text-left font-semibold">
+                      En attente
+                    </th>
+                    <th className="px-3 py-2 text-left font-semibold">
+                      Action
+                    </th>
+                  </tr>
                 </thead>
                 <tbody>
                   {proposition.lignes.length === 0 ? (
                     <tr>
-                      <td className="px-3 py-3 text-center text-slate-500" colSpan={9}>
+                      <td
+                        className="px-3 py-3 text-center text-slate-500"
+                        colSpan={11}
+                      >
                         Aucune ligne proposée.
                       </td>
                     </tr>
@@ -508,8 +553,12 @@ function Commandes() {
                         key={l.produitId}
                         className="border-b last:border-0 border-slate-100 hover:bg-slate-50"
                       >
-                        <td className="px-3 py-2 text-slate-600">{l.ifls || '-'}</td>
-                        <td className="px-3 py-2 text-slate-900 font-semibold">{l.nom}</td>
+                        <td className="px-3 py-2 text-slate-600">
+                          {l.ifls || '-'}
+                        </td>
+                        <td className="px-3 py-2 text-slate-900 font-semibold">
+                          {l.nom}
+                        </td>
                         <td className="px-3 py-2 text-slate-600">
                           {l.categorie || '-'}
                         </td>
@@ -518,11 +567,15 @@ function Commandes() {
                             type="number"
                             min="0"
                             value={l.cartonsProposes}
-                            onChange={(e) => updateCartons(l.produitId, e.target.value)}
+                            onChange={(e) =>
+                              updateCartons(l.produitId, e.target.value)
+                            }
                             className="w-20 border border-slate-300 rounded px-2 py-1 text-sm"
                           />
                         </td>
-                        <td className="px-3 py-2 text-slate-700">{l.unitesParCarton}</td>
+                        <td className="px-3 py-2 text-slate-700">
+                          {l.unitesParCarton}
+                        </td>
                         <td className="px-3 py-2 text-slate-700 font-semibold">
                           {numberFmt.format(l.totalUnites || 0)}
                         </td>
@@ -565,6 +618,7 @@ function Commandes() {
         )}
       </div>
 
+      {/* Bloc réception commandes */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div>
@@ -602,56 +656,85 @@ function Commandes() {
                   </span>
                   <span className="text-xs text-slate-500">
                     Livraison prévue{' '}
-                    {new Date(c.dateLivraisonPrevue).toLocaleDateString('fr-FR')}
+                    {new Date(
+                      c.dateLivraisonPrevue,
+                    ).toLocaleDateString('fr-FR')}
                   </span>
                   <span className="text-xs text-slate-500">
                     Statut : {c.statut.replace('_', ' ')}
                   </span>
-                  <button
-                    onClick={() => handleDownloadLog(c.id)}
-                    className="text-sm text-sky-700 hover:text-sky-900 font-semibold"
-                  >
-                    Log commande (.txt)
-                  </button>
-                  <button
-                    onClick={() => handleDownloadPdf(c.id)}
-                    className="text-sm text-emerald-700 hover:text-emerald-900 font-semibold"
-                  >
-                    PDF
-                  </button>
-                  <button
-                    onClick={() => handleAnnuler(c.id)}
-                    className="text-sm text-red-600 hover:text-red-800 font-semibold"
-                  >
-                    Annuler
-                  </button>
+
+                  {/* Boutons d'action à droite */}
+                  <div className="flex items-center gap-3 ml-auto">
+                    <button
+                      onClick={() => handleDownloadLog(c.id)}
+                      className="text-sm text-sky-700 hover:text-sky-900 font-semibold"
+                    >
+                      Log commande (.txt)
+                    </button>
+                    <button
+                      onClick={() => handleDownloadPdf(c.id)}
+                      className="text-sm text-emerald-700 hover:text-emerald-900 font-semibold"
+                    >
+                      PDF
+                    </button>
+                    <button
+                      onClick={() => handleAnnuler(c.id)}
+                      className="text-sm text-red-600 hover:text-red-800 font-semibold"
+                    >
+                      Annuler
+                    </button>
+                  </div>
                 </div>
 
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="bg-slate-50 text-slate-700 border-b border-slate-200">
-                        <th className="px-3 py-2 text-left font-semibold">IFLS</th>
-                        <th className="px-3 py-2 text-left font-semibold">Produit</th>
-                    <th className="px-3 py-2 text-left font-semibold">Cartons</th>
-                    <th className="px-3 py-2 text-left font-semibold">Unités</th>
-                    <th className="px-3 py-2 text-left font-semibold">Reçues (u.)</th>
-                    <th className="px-3 py-2 text-left font-semibold">Restant (u.)</th>
-                    <th className="px-3 py-2 text-left font-semibold">
-                      Saisir reçues (cartons)
-                    </th>
-                    <th className="px-3 py-2 text-left font-semibold">Tout reçu ?</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {c.lignes.map((l) => (
-                    <tr key={l.id} className="border-b last:border-0 border-slate-100">
+                        <th className="px-3 py-2 text-left font-semibold">
+                          IFLS
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Produit
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Cartons
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Unités
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Reçues (u.)
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Restant (u.)
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Saisir reçues (cartons)
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Tout reçu ?
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {c.lignes.map((l) => (
+                        <tr
+                          key={l.id}
+                          className="border-b last:border-0 border-slate-100"
+                        >
                           <td className="px-3 py-2 text-slate-600">
                             {l.produit?.ifls || '-'}
                           </td>
-                          <td className="px-3 py-2 text-slate-900">{l.produit?.nom}</td>
-                          <td className="px-3 py-2 text-slate-700">{l.cartons}</td>
-                          <td className="px-3 py-2 text-slate-700">{l.unites}</td>
+                          <td className="px-3 py-2 text-slate-900">
+                            {l.produit?.nom}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">
+                            {l.cartons}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">
+                            {l.unites}
+                          </td>
                           <td className="px-3 py-2 text-slate-700">
                             {l.unitesRecues} / {l.unites}
                           </td>
@@ -664,11 +747,15 @@ function Commandes() {
                               min="0"
                               max={
                                 l.unitesParCarton
-                                  ? Math.ceil((l.unites - l.unitesRecues) / l.unitesParCarton)
+                                  ? Math.ceil(
+                                      (l.unites - l.unitesRecues) /
+                                        l.unitesParCarton,
+                                    )
                                   : undefined
                               }
                               value={
-                                receptionInputs[c.id]?.[l.id] !== undefined
+                                receptionInputs[c.id]?.[l.id] !==
+                                undefined
                                   ? receptionInputs[c.id][l.id]
                                   : ''
                               }
@@ -687,10 +774,23 @@ function Commandes() {
                             <button
                               type="button"
                               onClick={() => {
-                                if (!l.unitesParCarton || l.unitesParCarton <= 0) return
-                                const restant = Math.max(0, l.unites - l.unitesRecues)
-                                const cartons = Math.ceil(restant / l.unitesParCarton)
-                                handleReceptionChange(c.id, l.id, cartons)
+                                if (
+                                  !l.unitesParCarton ||
+                                  l.unitesParCarton <= 0
+                                )
+                                  return
+                                const restant = Math.max(
+                                  0,
+                                  l.unites - l.unitesRecues,
+                                )
+                                const cartons = Math.ceil(
+                                  restant / l.unitesParCarton,
+                                )
+                                handleReceptionChange(
+                                  c.id,
+                                  l.id,
+                                  cartons,
+                                )
                               }}
                               className="text-xs font-semibold text-emerald-700 hover:text-emerald-900"
                             >
