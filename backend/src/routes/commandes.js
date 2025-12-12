@@ -190,7 +190,9 @@ function buildPropositionLine(produit, data) {
     enAttente = 0,
   } = data;
 
-  const consommationEstimee = (produit.quantiteJour || 0) * joursACouvrir;
+  const frequence = produit.frequenceJours && produit.frequenceJours > 0 ? produit.frequenceJours : 1;
+  const consommationEstimee =
+    ((produit.quantiteJour || 0) / frequence) * joursACouvrir;
   const besoin = consommationEstimee - stockActuel - enAttente;
 
   const cartons =
@@ -214,6 +216,7 @@ function buildPropositionLine(produit, data) {
     consommationEstimee,
     besoinUnites: Math.max(0, Math.ceil(besoin)),
     quantiteJour: produit.quantiteJour || 0,
+    frequenceJours: frequence,
     categorie: produit.categorie || produit.categorieRef?.nom || '',
   };
 }
@@ -265,6 +268,7 @@ router.get('/proposition', requirePermission('commandes:proposition'), async (re
           ifls: true,
           ean13: true,
           quantiteJour: true,
+          frequenceJours: true,
           unitesCarton: true,
           categorie: true,
           categorieRef: { select: { nom: true } },
@@ -347,6 +351,7 @@ router.post('/proposition/ajouter-produit', requirePermission('commandes:edit'),
         ifls: true,
         ean13: true,
         quantiteJour: true,
+        frequenceJours: true,
         unitesCarton: true,
         categorie: true,
         categorieRef: { select: { nom: true } },
@@ -366,6 +371,7 @@ router.post('/proposition/ajouter-produit', requirePermission('commandes:edit'),
       stockTheorique: 0,
       enAttente: 0,
       quantiteJour: produit.quantiteJour || 0,
+      frequenceJours: produit.frequenceJours && produit.frequenceJours > 0 ? produit.frequenceJours : 1,
       categorie: produit.categorie || produit.categorieRef?.nom || '',
     };
 

@@ -95,6 +95,7 @@ model Produit {
   ean13       String?
   ifls        String?
   quantiteJour Int?
+  frequenceJours Int @default(1)
   categorie   String?
   prixAchat   Decimal?
   unitesCarton Int?

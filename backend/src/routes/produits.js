@@ -135,6 +135,7 @@ router.post('/', requirePermission('produits:create'), async (req, res) => {
     ean13,
     ifls,
     quantiteJour,
+    frequenceJours,
   } = req.body;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
   const bodyMagasinId =
@@ -162,6 +163,10 @@ router.post('/', requirePermission('produits:create'), async (req, res) => {
   }
 
   try {
+    const parsedFrequence =
+      frequenceJours === undefined || frequenceJours === null || frequenceJours === ''
+        ? 1
+        : Math.max(1, parseInt(frequenceJours, 10) || 1);
     let categorieConnectId = null;
     if (categorieId) {
       const cat = await prisma.categorie.findFirst({
@@ -198,6 +203,7 @@ router.post('/', requirePermission('produits:create'), async (req, res) => {
           quantiteJour !== undefined && quantiteJour !== null && quantiteJour !== ''
             ? parseInt(quantiteJour, 10)
             : null,
+        frequenceJours: parsedFrequence,
         prixVente: Number(prixVente),
         prixAchat:
           prixAchat === undefined || prixAchat === null || prixAchat === ''
@@ -242,6 +248,7 @@ router.put('/:id', requirePermission('produits:update'), async (req, res) => {
     ean13,
     ifls,
     quantiteJour,
+    frequenceJours,
   } = req.body;
   const { resolvedMagasinId } = getMagasinScope(req);
   const parsedQuantiteJour =
@@ -256,9 +263,13 @@ router.put('/:id', requirePermission('produits:update'), async (req, res) => {
   }
 
   try {
+    const parsedFrequence =
+      frequenceJours === undefined || frequenceJours === null || frequenceJours === ''
+        ? undefined
+        : Math.max(1, parseInt(frequenceJours, 10) || 1);
     const produitScope = await prisma.produit.findUnique({
       where: { id, ...(resolvedMagasinId ? { magasinId: resolvedMagasinId } : {}) },
-      select: { magasinId: true, nom: true },
+      select: { magasinId: true, nom: true, frequenceJours: true },
     });
     if (!produitScope) {
       return res.status(404).json({ error: 'Produit introuvable' });
@@ -325,6 +336,12 @@ router.put('/:id', requirePermission('produits:update'), async (req, res) => {
             : Number.isNaN(parsedQuantiteJour)
               ? null
               : parsedQuantiteJour,
+        frequenceJours:
+          parsedFrequence === undefined
+            ? undefined
+            : Number.isNaN(parsedFrequence)
+              ? produitScope.frequenceJours ?? 1
+              : parsedFrequence,
         actif,
       },
     });
@@ -378,6 +395,21 @@ function parseNumber(val) {
   return Number.isNaN(n) ? null : n;
 }
 
+function normalizeHexColor(val) {
+  if (!val) return null;
+  let hex = val.toString().trim();
+  if (!hex) return null;
+  if (hex.startsWith('#')) hex = hex.slice(1);
+  if (hex.length === 3) {
+    hex = hex
+      .split('')
+      .map((c) => c + c)
+      .join('');
+  }
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return null;
+  return `#${hex.toUpperCase()}`;
+}
+
 // Export Excel des produits du magasin
 router.get('/export-excel', requirePermission('produits:update'), async (req, res) => {
   const { resolvedMagasinId, isAdmin } = getMagasinScope(req);
@@ -392,43 +424,48 @@ router.get('/export-excel', requirePermission('produits:update'), async (req, re
         nom: true,
         reference: true,
         categorie: true,
-        categorieRef: { select: { nom: true } },
+        categorieRef: { select: { nom: true, couleur: true } },
         prixVente: true,
         prixAchat: true,
         unitesCarton: true,
         quantiteJour: true,
+        frequenceJours: true,
         ean13: true,
         ifls: true,
         actif: true,
       },
     });
 
-    const header = [
-      'ID',
-      'Nom',
-      'Référence',
-      'Catégorie',
-      'PrixVente',
-      'PrixAchat',
-      'UnitesCarton',
-      'QuantiteJour',
-      'EAN13',
-      'IFLS',
-      'Actif',
-    ];
-    const rows = produits.map((p) => [
-      p.id,
-      p.nom || '',
-      p.reference || '',
-      p.categorieRef?.nom || p.categorie || '',
-      p.prixVente ? Number(p.prixVente) : '',
-      p.prixAchat ? Number(p.prixAchat) : '',
-      p.unitesCarton ?? '',
-      p.quantiteJour ?? '',
-      p.ean13 || '',
-      p.ifls || '',
-      p.actif ? 'Oui' : 'Non',
-    ]);
+  const header = [
+    'ID',
+    'Nom',
+    'Référence',
+    'Catégorie',
+    'CouleurCatégorie',
+    'PrixVente',
+    'PrixAchat',
+    'UnitesCarton',
+    'FrequenceJours',
+    'QuantiteJour',
+    'EAN13',
+    'IFLS',
+    'Actif',
+  ];
+  const rows = produits.map((p) => [
+    p.id,
+    p.nom || '',
+    p.reference || '',
+    p.categorieRef?.nom || p.categorie || '',
+    p.categorieRef?.couleur || '',
+    p.prixVente ? Number(p.prixVente) : '',
+    p.prixAchat ? Number(p.prixAchat) : '',
+    p.unitesCarton ?? '',
+    p.frequenceJours ?? 1,
+    p.quantiteJour ?? '',
+    p.ean13 || '',
+    p.ifls || '',
+    p.actif ? 'Oui' : 'Non',
+  ]);
 
     const worksheet = xlsx.utils.aoa_to_sheet([header, ...rows]);
     const workbook = xlsx.utils.book_new();
@@ -466,6 +503,34 @@ router.post('/import-excel', requirePermission('produits:update'), async (req, r
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = xlsx.utils.sheet_to_json(sheet, { defval: '' });
 
+    const upsertCategorie = async (nom, couleur) => {
+      if (!nom) return { id: null, nom: null };
+      const nomTrim = nom.trim();
+      if (!nomTrim) return { id: null, nom: null };
+      const couleurHex = normalizeHexColor(couleur);
+      let cat = await prisma.categorie.findFirst({
+        where: {
+          nom: nomTrim,
+          magasinId: resolvedMagasinId || null,
+        },
+      });
+      if (!cat) {
+        cat = await prisma.categorie.create({
+          data: {
+            nom: nomTrim,
+            couleur: couleurHex,
+            magasinId: resolvedMagasinId || null,
+          },
+        });
+      } else if (couleurHex && cat.couleur !== couleurHex) {
+        cat = await prisma.categorie.update({
+          where: { id: cat.id },
+          data: { couleur: couleurHex },
+        });
+      }
+      return cat;
+    };
+
     let created = 0;
     let updated = 0;
     const errors = [];
@@ -473,12 +538,35 @@ router.post('/import-excel', requirePermission('produits:update'), async (req, r
     for (const row of rows) {
       const id = parseNumber(row.ID || row.Id || row.id);
       const nom = (row.Nom || row['nom'] || '').toString().trim();
-      const reference = (row['Référence'] || row.Reference || row.reference || '').toString().trim();
       const categorie = (row['Catégorie'] || row.Categorie || row.categorie || '').toString().trim();
+      const categorieCouleur =
+        row.CouleurCatégorie ||
+        row.CouleurCategorie ||
+        row['Couleur catégorie'] ||
+        row['Couleur Categorie'] ||
+        row['Couleur cat'] ||
+        row.Couleur ||
+        '';
       const prixVente = parseNumber(row.PrixVente || row['Prix vente'] || row['Prix Vente']);
       const prixAchat = parseNumber(row.PrixAchat || row['Prix achat'] || row['Prix Achat']);
       const unitesCarton = parseNumber(row.UnitesCarton || row['Unités/carton'] || row['Unites/carton']);
       const quantiteJour = parseNumber(row.QuantiteJour || row['Quantité jour'] || row['Quantite jour']);
+      const frequenceJoursRaw =
+        row.FrequenceJours ||
+        row['Frequence jours'] ||
+        row['Frequence'] ||
+        row['Fréquence'] ||
+        row['Fréquence jours'] ||
+        row['Frequence_Jours'] ||
+        row['frequenceJours'] ||
+        '';
+      const frequenceParsed = parseInt(frequenceJoursRaw, 10);
+      const frequenceJours =
+        frequenceJoursRaw === ''
+          ? 1
+          : Number.isNaN(frequenceParsed) || frequenceParsed < 1
+            ? 1
+            : frequenceParsed;
       const ean13 = (row.EAN13 || row.EAN || row['EAN 13'] || '').toString().trim();
       const ifls = (row.IFLS || '').toString().trim();
       const actifRaw = (row.Actif || row.ACTIF || '').toString().toLowerCase();
@@ -495,19 +583,21 @@ router.post('/import-excel', requirePermission('produits:update'), async (req, r
           where: { id, ...(resolvedMagasinId ? { magasinId: resolvedMagasinId } : {}) },
         });
       }
-      if (!existing && reference) {
-        existing = await prisma.produit.findFirst({
-          where: { reference, ...(resolvedMagasinId ? { magasinId: resolvedMagasinId } : {}) },
-        });
-      }
+      // Pas de lookup par référence : on ignore la référence du fichier et on ne la touche pas
+
+      const categorieRef = await upsertCategorie(categorie, categorieCouleur);
+      const nextCategorieId =
+        categorie ? categorieRef.id || null : existing ? existing.categorieId : null;
+      const nextCategorieNom = categorie || (existing ? existing.categorie : null);
 
       if (existing) {
         await prisma.produit.update({
           where: { id: existing.id },
           data: {
             nom: nom || existing.nom,
-            reference: reference || existing.reference,
-            categorie: categorie || existing.categorie,
+            reference: existing.reference,
+            categorie: nextCategorieNom,
+            categorieId: nextCategorieId,
             prixVente: prixVente ?? existing.prixVente,
             prixAchat: prixAchat === null ? null : prixAchat ?? existing.prixAchat,
             unitesCarton:
@@ -516,6 +606,7 @@ router.post('/import-excel', requirePermission('produits:update'), async (req, r
                 : unitesCarton ?? existing.unitesCarton,
             quantiteJour:
               quantiteJour === null ? null : quantiteJour ?? existing.quantiteJour,
+            frequenceJours: frequenceJours || existing.frequenceJours || 1,
             ean13: ean13 || existing.ean13,
             ifls: ifls || existing.ifls,
             actif: actif === undefined ? existing.actif : actif,
@@ -530,19 +621,29 @@ router.post('/import-excel', requirePermission('produits:update'), async (req, r
         // Vérifie permission de création
         if (!isAdmin && !req.user?.permissions?.includes('produits:create')) {
           errors.push(
-            `Création refusée (permission manquante) pour le produit ${nom} / ref ${reference || '-'}`,
+            `Création refusée (permission manquante) pour le produit ${nom}`,
           );
           continue;
         }
+        // Laisse computeReference générer la référence
+        const finalReference = await computeReference({
+          reference: undefined, // on ignore la ref du fichier
+          magasinId: resolvedMagasinId || null,
+          nom,
+          allowAutogen: true,
+        });
+
         await prisma.produit.create({
           data: {
             nom,
-            reference: reference || null,
-            categorie: categorie || null,
+            reference: finalReference ?? null,
+            categorie: nextCategorieNom || null,
+            categorieId: nextCategorieId,
             prixVente,
             prixAchat: prixAchat === null ? null : prixAchat ?? null,
             unitesCarton: unitesCarton === null ? null : unitesCarton ?? null,
             quantiteJour: quantiteJour === null ? null : quantiteJour ?? null,
+            frequenceJours,
             ean13: ean13 || null,
             ifls: ifls || null,
             actif: actif === undefined ? true : !!actif,

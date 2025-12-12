@@ -117,6 +117,13 @@ function formatDate(d) {
   });
 }
 
+function formatDateShort(d) {
+  return d.toLocaleDateString('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+  });
+}
+
 async function importExcel(req, res, typeLabel) {
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 
@@ -306,15 +313,32 @@ async function generateExcel(produits, titre, days) {
   });
 }
 
+async function fetchStockMap(produitIds) {
+  if (!Array.isArray(produitIds) || produitIds.length === 0) return {};
+  const grouped = await prisma.mouvementStock.groupBy({
+    by: ['produitId'],
+    _sum: { quantite: true },
+    where: {
+      produitId: { in: produitIds },
+      NOT: { nature: 'PERTE' }, // pertes non déstockantes dans le modèle actuel
+    },
+  });
+  return Object.fromEntries(grouped.map((g) => [g.produitId, g._sum.quantite || 0]));
+}
+
+function buildDayLabels(days) {
+  return jours.map((jour, idx) => `${jour.slice(0, 3)} ${formatDateShort(days[idx])}`);
+}
+
 function generatePDF(doc, titre, produits, dayLabels) {
   doc
-    .fontSize(18)
+    .fontSize(17)
     .font('Helvetica-Bold')
     .fillColor('#0f172a')
     .text(titre, { align: 'center' });
   doc
-    .moveDown(0.4)
-    .fontSize(12)
+    .moveDown(0.35)
+    .fontSize(11)
     .font('Helvetica')
     .fillColor('#475569')
     .text('Lambert Gestion : Boulangerie', { align: 'center' });
@@ -323,12 +347,13 @@ function generatePDF(doc, titre, produits, dayLabels) {
 
   const pageWidth =
     doc.page.width - doc.page.margins.left - doc.page.margins.right;
-  const productColWidth = pageWidth * 0.3;
-  const dayColWidth = (pageWidth - productColWidth) / jours.length;
-  const headers = ['Produit', ...dayLabels];
+  const productColWidth = pageWidth * 0.36;
+  const stockColWidth = pageWidth * 0.12;
+  const dayColWidth = (pageWidth - productColWidth - stockColWidth) / jours.length;
+  const headers = ['Produit', 'Stock', ...dayLabels];
   const startX = doc.page.margins.left;
-  const headerHeight = 32;
-  const rowHeight = 22;
+  const headerHeight = 30;
+  const rowHeight = 20;
   let y = doc.y;
 
   const drawHeader = () => {
@@ -340,15 +365,19 @@ function generatePDF(doc, titre, produits, dayLabels) {
       .fill()
       .restore();
     doc.strokeColor('#cbd5e1').lineWidth(1);
-    doc.font('Helvetica-Bold').fontSize(11).fillColor('#0f172a');
+    doc.font('Helvetica-Bold').fontSize(10).fillColor('#0f172a');
     headers.forEach((h, index) => {
-      const colWidth = index === 0 ? productColWidth : dayColWidth;
+      const colWidth =
+        index === 0 ? productColWidth : index === 1 ? stockColWidth : dayColWidth;
       doc.rect(x, y, colWidth, headerHeight).stroke();
-      doc.text(h, x + 6, y + 9, { width: colWidth - 12 });
+      doc.text(h, x + 4, y + 8, {
+        width: colWidth - 8,
+        align: index === 0 ? 'left' : 'center',
+      });
       x += colWidth;
     });
     y += headerHeight;
-    doc.font('Helvetica').fontSize(10).fillColor('#0f172a');
+    doc.font('Helvetica').fontSize(9).fillColor('#0f172a');
   };
 
   drawHeader();
@@ -370,12 +399,22 @@ function generatePDF(doc, titre, produits, dayLabels) {
       .rect(x, y, productColWidth, rowHeight)
       .strokeColor('#e2e8f0')
       .stroke();
-    doc.text(p.nom, x + 6, y + 6, {
-      width: productColWidth - 12,
-      height: rowHeight - 10,
+    doc.text(p.nom, x + 5, y + 5, {
+      width: productColWidth - 10,
+      height: rowHeight - 8,
       ellipsis: true,
     });
     x += productColWidth;
+
+    doc
+      .rect(x, y, stockColWidth, rowHeight)
+      .strokeColor('#e2e8f0')
+      .stroke();
+    doc.text(String(p.stockActuel ?? ''), x + 4, y + 5, {
+      width: stockColWidth - 8,
+      align: 'center',
+    });
+    x += stockColWidth;
 
     for (let i = 0; i < jours.length; i++) {
       doc
@@ -501,6 +540,7 @@ router.get('/feuille-pdf', async (req, res) => {
         { nom: 'asc' },
       ],
       select: {
+        id: true,
         nom: true,
         categorieRef: { select: { nom: true, couleur: true } },
       },
@@ -508,8 +548,8 @@ router.get('/feuille-pdf', async (req, res) => {
 
     const doc = new PDFDocument({
       size: 'A4',
-      layout: 'landscape',
-      margin: 40,
+      layout: 'portrait',
+      margins: { top: 28, left: 24, right: 24, bottom: 28 },
     });
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -531,13 +571,15 @@ router.get('/feuille-pdf', async (req, res) => {
       monday,
     )} au ${formatDate(sunday)}`;
 
-    const dayLabels = jours.map((jour, idx) => `${jour} (${formatDate(days[idx])})`);
+    const dayLabels = buildDayLabels(days);
+    const stockMap = await fetchStockMap(produits.map((p) => p.id));
 
     generatePDF(
       doc,
       titre,
       produits.map((p) => ({
         nom: p.nom,
+        stockActuel: stockMap[p.id] ?? 0,
         categorieNom: p.categorieRef?.nom || '',
         categorieCouleur: p.categorieRef?.couleur || null,
       })),
@@ -651,6 +693,7 @@ feuilleTypes.forEach(({ key, label, fileSuffix }) => {
           { nom: 'asc' },
         ],
         select: {
+          id: true,
           nom: true,
           categorieRef: { select: { nom: true, couleur: true } },
         },
@@ -658,8 +701,8 @@ feuilleTypes.forEach(({ key, label, fileSuffix }) => {
 
       const doc = new PDFDocument({
         size: 'A4',
-        layout: 'landscape',
-        margin: 40,
+        layout: 'portrait',
+        margins: { top: 28, left: 24, right: 24, bottom: 28 },
       });
 
       res.setHeader('Content-Type', 'application/pdf');
@@ -680,13 +723,15 @@ feuilleTypes.forEach(({ key, label, fileSuffix }) => {
       const titre = `Feuille hebdomadaire ${label} – Semaine du ${formatDate(
         monday,
       )} au ${formatDate(sunday)}`;
-      const dayLabels = jours.map((jour, idx) => `${jour} (${formatDate(days[idx])})`);
+      const dayLabels = buildDayLabels(days);
+      const stockMap = await fetchStockMap(produits.map((p) => p.id));
 
       generatePDF(
         doc,
         titre,
         produits.map((p) => ({
           nom: p.nom,
+          stockActuel: stockMap[p.id] ?? 0,
           categorieNom: p.categorieRef?.nom || '',
           categorieCouleur: p.categorieRef?.couleur || null,
         })),

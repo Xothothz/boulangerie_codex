@@ -599,6 +599,7 @@ router.get('/produits', async (req, res) => {
         categorie: true,
         categorieId: true,
         quantiteJour: true,
+        frequenceJours: true,
       },
     });
 
@@ -628,6 +629,7 @@ router.get('/produits', async (req, res) => {
       categorie: produit.categorie,
       categorieId: produit.categorieId || null,
       quantiteJour: produit.quantiteJour || null,
+      frequenceJours: produit.frequenceJours || 1,
       stock: stockMap[produit.id] ?? 0,
     }));
 

@@ -29,6 +29,7 @@ function Produits() {
     ean13: '',
     ifls: '',
     quantiteJour: '',
+    frequenceJours: '1',
     prixAchat: '',
     unitesCarton: '',
     categorieId: '',
@@ -238,6 +239,10 @@ function Produits() {
     try {
       const quantiteJourParsed =
         formData.quantiteJour === '' ? null : parseInt(formData.quantiteJour, 10)
+      const frequenceParsed =
+        formData.frequenceJours === '' ? 1 : parseInt(formData.frequenceJours, 10)
+      const frequenceSafe =
+        Number.isNaN(frequenceParsed) || frequenceParsed < 1 ? 1 : frequenceParsed
 
       const referencePayload = allowCustomReference
         ? formData.reference.trim() || null
@@ -255,6 +260,7 @@ function Produits() {
           Number.isNaN(quantiteJourParsed) || quantiteJourParsed === null
             ? null
             : quantiteJourParsed,
+        frequenceJours: frequenceSafe,
         prixVente: Number(formData.prixVente),
         magasinId: selectedMagasinId || undefined,
         prixAchat:
@@ -585,6 +591,7 @@ function Produits() {
                   <th className="px-3 py-2 font-semibold">EAN</th>
                   <th className="px-3 py-2 font-semibold">IFLS</th>
                   <th className="px-3 py-2 font-semibold">Qté/jour</th>
+                  <th className="px-3 py-2 font-semibold">Fréquence (jours)</th>
                   <th className="px-3 py-2 font-semibold">Prix achat</th>
                   <th className="px-3 py-2 font-semibold">Unités/carton</th>
                   <th className="px-3 py-2 font-semibold">Stock</th>
@@ -632,6 +639,9 @@ function Produits() {
                         {produit.quantiteJour ?? '-'}
                       </td>
                       <td className="px-3 py-2 text-slate-600">
+                        {produit.frequenceJours ?? 1}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">
                         {produit.prixAchat !== undefined && produit.prixAchat !== null
                           ? `${priceFormatter.format(Number(produit.prixAchat))} €`
                           : '-'}
@@ -667,14 +677,18 @@ function Produits() {
                                 nom: produit.nom || '',
                                 reference: produit.reference || '',
                                 categorie: produit.categorie || '',
-                                prixVente: produit.prixVente || '',
-                                ean13: produit.ean13 || '',
-                                ifls: produit.ifls || '',
-                                quantiteJour: produit.quantiteJour ?? '',
-                                prixAchat: produit.prixAchat ?? '',
-                                unitesCarton: produit.unitesCarton ?? '',
-                                categorieId: produit.categorieRef?.id || '',
-                              })
+                              prixVente: produit.prixVente || '',
+                              ean13: produit.ean13 || '',
+                              ifls: produit.ifls || '',
+                              quantiteJour: produit.quantiteJour ?? '',
+                              frequenceJours:
+                                produit.frequenceJours !== undefined && produit.frequenceJours !== null
+                                  ? String(produit.frequenceJours)
+                                  : '1',
+                              prixAchat: produit.prixAchat ?? '',
+                              unitesCarton: produit.unitesCarton ?? '',
+                              categorieId: produit.categorieRef?.id || '',
+                            })
                               setAllowCustomReference(false)
                               setActiveTab('add')
                             }}
@@ -886,6 +900,23 @@ function Produits() {
               step="1"
               className="w-full rounded-lg border border-slate-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Fréquence (jours entre deux ventes)
+            </label>
+            <input
+              type="number"
+              name="frequenceJours"
+              value={formData.frequenceJours}
+              onChange={handleInputChange}
+              min="1"
+              step="1"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Exemple : 2 pour “1 jour sur 2”. Défaut : 1.
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">

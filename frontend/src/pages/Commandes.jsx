@@ -153,6 +153,7 @@ function Commandes() {
         stockTheorique: 0,
         enAttente: 0,
         quantiteJour: prod.quantiteJour || 0,
+        frequenceJours: prod.frequenceJours || 1,
         categorie: prod.categorie || prod.categorieRef?.nom || '',
       }
       return { ...prev, lignes: [...prev.lignes, line] }
@@ -462,7 +463,7 @@ function Commandes() {
                 <strong>{propositionTotalUnites}</strong>
               </span>
               <span className="text-xs text-slate-500">
-                Détail : besoin = (quantiteJour × jours) – stock actuel
+                Détail : besoin = (quantiteJour / frequenceJours × jours) – stock actuel
               </span>
             </div>
 

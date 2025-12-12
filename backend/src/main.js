@@ -21,6 +21,7 @@ import authMiddleware from './middlewares/auth.js';
 
 const app = express();
 const PORT = process.env.PORT || 8000;
+const HOST = process.env.HOST || '0.0.0.0';
 
 // ✅ Autoriser les origines locales (liste dans CORS_ORIGIN, séparées par des virgules)
 const ALLOWED_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:5173')
@@ -68,6 +69,6 @@ app.use('/admin', authMiddleware, adminRouter);
 app.use('/permissions', authMiddleware, permissionsRouter);
 app.use('/profil', authMiddleware, profilRouter);
 
-app.listen(PORT, () => {
-  console.log(`Serveur démarré sur http://localhost:${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`Serveur démarré sur http://${HOST}:${PORT}`);
 });
