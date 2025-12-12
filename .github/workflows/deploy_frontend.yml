@@ -8,14 +8,15 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Deploy on VPS via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: 79.137.33.34
           username: ubuntu
+          port: 22
           key: ${{ secrets.VPS_SSH_KEY }}
+          debug: true
           script: |
             cd /var/www/boulangerie_codex
-            ./deploy_front.sh
+            bash ./deploy_front.sh
