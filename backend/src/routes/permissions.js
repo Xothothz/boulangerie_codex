@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../config/db.js';
 import { PERMISSIONS, PERMISSION_GROUPS, requirePermission } from '../utils/permissions.js';
+import { logAudit } from '../utils/audit.js';
 
 const router = express.Router();
 
@@ -69,6 +70,14 @@ router.put(
             data: filteredCodes.map((code) => ({ utilisateurId: id, code })),
           });
         }
+      });
+
+      await logAudit({
+        req,
+        action: 'permissions:update',
+        resourceType: 'utilisateur',
+        resourceId: id,
+        details: { permissions: filteredCodes },
       });
 
       return res.json({ utilisateurId: id, permissions: filteredCodes });

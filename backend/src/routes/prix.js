@@ -2,6 +2,7 @@ import express from 'express';
 import prisma from '../config/db.js';
 import { ensureMagasin, getMagasinScope } from '../utils/magasin.js';
 import { requirePermission } from '../utils/permissions.js';
+import { logAudit } from '../utils/audit.js';
 
 const router = express.Router();
 
@@ -47,6 +48,15 @@ router.post('/historique', requirePermission('prix:write'), async (req, res) => 
         prix: Number(prix),
         dateDebut: dateDebut ? new Date(dateDebut) : undefined,
       },
+    });
+
+    await logAudit({
+      req,
+      action: 'prix:write',
+      resourceType: 'produit',
+      resourceId: Number(produitId),
+      magasinId: resolvedMagasinId ?? null,
+      details: { type, prix: Number(prix), dateDebut: dateDebut || null },
     });
 
     res.status(201).json(historique);

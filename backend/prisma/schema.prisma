@@ -218,3 +218,32 @@ model InventaireLigne {
   stockAvant    Int
   ecart         Int
 }
+
+model AuditLog {
+  id          Int       @id @default(autoincrement())
+  createdAt   DateTime  @default(now())
+
+  userId      Int?
+  userEmail   String?
+  userRole    Role?
+  magasinId   Int?
+
+  action      String
+  resourceType String?
+  resourceId  Int?
+  success     Boolean   @default(true)
+  statusCode  Int?
+
+  method      String?
+  path        String?
+  ip          String?
+  userAgent   String?
+  requestId   String?
+
+  details     Json?
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([magasinId])
+  @@index([action])
+}

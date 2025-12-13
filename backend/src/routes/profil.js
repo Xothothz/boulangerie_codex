@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../config/db.js';
 import { requirePermission } from '../utils/permissions.js';
+import { logAudit } from '../utils/audit.js';
 
 const router = express.Router();
 
@@ -51,6 +52,15 @@ router.put('/me', async (req, res) => {
         role: true,
         magasinId: true,
       },
+    });
+
+    await logAudit({
+      req,
+      action: 'profil:update',
+      resourceType: 'utilisateur',
+      resourceId: userId,
+      magasinId: user.magasinId ?? null,
+      details: { self: true, nom, prenom },
     });
 
     res.json({ user });
@@ -109,6 +119,15 @@ router.put(
           role: true,
           magasinId: true,
         },
+      });
+
+      await logAudit({
+        req,
+        action: 'profil:update',
+        resourceType: 'utilisateur',
+        resourceId: userId,
+        magasinId: user?.magasinId ?? null,
+        details: { self: false, nom, prenom },
       });
 
       res.json({ user });

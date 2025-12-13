@@ -5,6 +5,7 @@ import xlsx from 'xlsx';
 import PDFDocument from 'pdfkit';
 import { getWeekDateRange } from '../utils/week.js';
 import { requirePermission, hasPermission } from '../utils/permissions.js';
+import { logAudit } from '../utils/audit.js';
 
 async function applyInventaire(lignes, date, resolvedMagasinId, utilisateurId) {
   if (!Array.isArray(lignes) || lignes.length === 0) {
@@ -190,6 +191,19 @@ router.post('/mouvements', requirePermission('stock:movement:create'), async (re
       },
     });
 
+    await logAudit({
+      req,
+      action: 'stock:movement:create',
+      resourceType: 'produit',
+      resourceId: Number(produitId),
+      magasinId: resolvedMagasinId ?? null,
+      details: {
+        type,
+        quantite: signedQuantity,
+        nature: resolveNature(nature, type),
+      },
+    });
+
     res.status(201).json(mouvement);
   } catch (err) {
     console.error('Erreur POST /stock/mouvements :', err);
@@ -267,6 +281,18 @@ router.post('/inventaire-import', requirePermission('inventaire:import'), async 
     }
 
     const result = await applyInventaire(lignes, new Date(), resolvedMagasinId, utilisateurId);
+    await logAudit({
+      req,
+      action: 'inventaire:import',
+      resourceType: 'inventaire',
+      resourceId: result?.inventaireId || null,
+      magasinId: resolvedMagasinId ?? null,
+      details: {
+        lignes: lignes.length,
+        mouvements: result?.mouvements_crees,
+        produitsNonTrouves: produitsNonTrouves.length,
+      },
+    });
     return res.json({ ...result, produits_non_trouves: produitsNonTrouves });
   } catch (err) {
     console.error('Erreur POST /stock/inventaire-import :', err);
@@ -344,6 +370,15 @@ router.post('/inventaire/:id/annuler', requirePermission('inventaire:annuler'), 
       });
     });
 
+    await logAudit({
+      req,
+      action: 'inventaire:annuler',
+      resourceType: 'inventaire',
+      resourceId: inv.id,
+      magasinId: inv.magasinId ?? resolvedMagasinId ?? null,
+      details: { mouvementsAnnules: inv.mouvements.length },
+    });
+
     res.json({ message: 'Inventaire annulé et stocks restaurés.' });
   } catch (err) {
     console.error('Erreur POST /stock/inventaire/:id/annuler :', err);
@@ -376,6 +411,15 @@ router.get('/inventaire/:id/pdf', requirePermission('inventaire:export'), async 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="Inventaire_${inv.id}.pdf"`);
     doc.pipe(res);
+
+    await logAudit({
+      req,
+      action: 'inventaire:export',
+      resourceType: 'inventaire',
+      resourceId: inv.id,
+      magasinId: inv.magasinId ?? resolvedMagasinId ?? null,
+      details: { format: 'pdf', lignes: inv.lignes.length },
+    });
 
     doc
       .fontSize(18)
@@ -527,6 +571,19 @@ router.post('/inventaire/:id/modifier-ligne', requirePermission('inventaire:edit
       });
     });
 
+    await logAudit({
+      req,
+      action: 'inventaire:edit-line',
+      resourceType: 'inventaire',
+      resourceId: inv.id,
+      magasinId: inv.magasinId ?? resolvedMagasinId ?? null,
+      details: {
+        produitId,
+        quantiteReelle: nouvelleQuantite,
+        delta,
+      },
+    });
+
     res.json({ message: 'Ligne inventaire mise à jour.' });
   } catch (err) {
     console.error('Erreur POST /stock/inventaire/:id/modifier-ligne :', err);
@@ -664,6 +721,17 @@ router.post('/inventaire', requirePermission('inventaire:create'), async (req, r
 
   try {
     const result = await applyInventaire(lignes, date, resolvedMagasinId, utilisateurId);
+    await logAudit({
+      req,
+      action: 'inventaire:create',
+      resourceType: 'inventaire',
+      resourceId: result?.inventaireId || null,
+      magasinId: resolvedMagasinId ?? null,
+      details: {
+        lignes: lignes.length,
+        mouvements: result?.mouvements_crees,
+      },
+    });
     return res.json(result);
   } catch (err) {
     console.error('Erreur POST /stock/inventaire :', err);
@@ -807,6 +875,17 @@ router.post('/mouvements-semaine', async (req, res) => {
       }
     });
 
+    await logAudit({
+      req,
+      action: `mouvements-semaine:${type}`,
+      resourceType: 'mouvement_stock',
+      magasinId: resolvedMagasinId ?? null,
+      details: {
+        sem,
+        lignes: lignes.length,
+      },
+    });
+
     res.json({ message: 'Mouvements semaine enregistrés.' });
   } catch (err) {
     console.error('Erreur POST /stock/mouvements-semaine :', err);
@@ -863,6 +942,15 @@ router.get('/inventaire-feuille-excel', requirePermission('inventaire:export'), 
       'Content-Type',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
+
+    await logAudit({
+      req,
+      action: 'inventaire:export',
+      resourceType: 'inventaire',
+      magasinId: resolvedMagasinId ?? null,
+      details: { format: 'xlsx', produits: produits.length },
+    });
+
     res.send(buffer);
   } catch (err) {
     console.error('Erreur GET /stock/inventaire-feuille-excel :', err);
@@ -910,6 +998,14 @@ router.get('/inventaire-feuille-pdf', requirePermission('inventaire:export'), as
       'attachment; filename="Inventaire.pdf"',
     );
     doc.pipe(res);
+
+    await logAudit({
+      req,
+      action: 'inventaire:export',
+      resourceType: 'inventaire',
+      magasinId: resolvedMagasinId ?? null,
+      details: { format: 'pdf', produits: produits.length },
+    });
 
     doc
       .fontSize(18)

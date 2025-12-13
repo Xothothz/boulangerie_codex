@@ -35,6 +35,16 @@ function Parametres() {
   const [permMessage, setPermMessage] = useState('')
   const [permSelectedUserId, setPermSelectedUserId] = useState('')
   const [permSelected, setPermSelected] = useState([])
+  const [logs, setLogs] = useState([])
+  const [logsLoading, setLogsLoading] = useState(false)
+  const [logsError, setLogsError] = useState('')
+  const [logsFilters, setLogsFilters] = useState({
+    limit: 50,
+    action: '',
+    q: '',
+    success: 'all',
+    magasinId: '',
+  })
 
   const fetchMagasins = async () => {
     setLoading(true)
@@ -65,6 +75,42 @@ function Parametres() {
   useEffect(() => {
     fetchMagasins()
   }, [])
+
+  const fetchAuditLogs = async () => {
+    setLogsLoading(true)
+    setLogsError('')
+    try {
+      const params = new URLSearchParams()
+      params.set('limit', logsFilters.limit || 50)
+      if (logsFilters.action) params.set('action', logsFilters.action)
+      if (logsFilters.q) params.set('q', logsFilters.q)
+      if (logsFilters.magasinId) params.set('magasinId', logsFilters.magasinId)
+      if (logsFilters.success === 'true' || logsFilters.success === 'false') {
+        params.set('success', logsFilters.success)
+      }
+      const response = await fetch(`${API_URL}/admin/audit-logs?${params.toString()}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (response.status === 401) {
+        logout()
+        throw new Error('Session expirée, merci de vous reconnecter.')
+      }
+      if (response.status === 403) {
+        throw new Error('Accès refusé : rôle ADMIN requis.')
+      }
+      if (!response.ok) {
+        const t = await response.text()
+        throw new Error(t || 'Erreur lors du chargement des logs.')
+      }
+      const data = await response.json()
+      setLogs(data.items || [])
+    } catch (err) {
+      console.error('Erreur GET /admin/audit-logs', err)
+      setLogsError(err.message || 'Impossible de charger les logs.')
+    } finally {
+      setLogsLoading(false)
+    }
+  }
 
   const fetchCategories = async () => {
     if (selectedMagasinId === null || selectedMagasinId === undefined) return
@@ -108,6 +154,9 @@ function Parametres() {
         fetchUsers()
       }
     }
+    if (activeSection === 'logs' && !logsLoading && logs.length === 0) {
+      fetchAuditLogs()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSection])
 
@@ -146,6 +195,24 @@ function Parametres() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSection])
+
+  const formatDateTime = (value) => {
+    try {
+      return new Date(value).toLocaleString('fr-FR')
+    } catch (e) {
+      return value
+    }
+  }
+
+  const detailsPreview = (details) => {
+    if (!details) return '-'
+    try {
+      const str = JSON.stringify(details)
+      return str.length > 120 ? `${str.slice(0, 120)}…` : str
+    } catch (e) {
+      return '-'
+    }
+  }
 
   const fetchPermissionDefinitions = async () => {
     setPermLoading(true)
@@ -539,7 +606,7 @@ function Parametres() {
           )}
         </div>
 
-        <div className="grid md:grid-cols-5 border-b border-slate-200">
+        <div className="grid md:grid-cols-6 border-b border-slate-200">
           <button
             className={`text-left px-4 py-3 text-sm font-semibold ${
               activeSection === 'magasins'
@@ -580,6 +647,18 @@ function Parametres() {
               onClick={() => setActiveSection('permissions')}
             >
               Permissions
+            </button>
+          )}
+          {(user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && (
+            <button
+              className={`text-left px-4 py-3 text-sm font-semibold ${
+                activeSection === 'logs'
+                  ? 'bg-emerald-50 text-emerald-800 border-l-4 border-emerald-600'
+                  : 'text-slate-700 hover:bg-slate-50'
+              }`}
+              onClick={() => setActiveSection('logs')}
+            >
+              Logs
             </button>
           )}
           {user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' ? (
@@ -1062,6 +1141,176 @@ function Parametres() {
                   </div>
                 </div>
               </>
+            )}
+
+          {activeSection === 'logs' &&
+            (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && (
+              <div className="space-y-4">
+                <div className="flex flex-col md:flex-row md:items-end gap-3">
+                  <div className="flex-1">
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      Action contient
+                    </label>
+                    <input
+                      type="text"
+                      value={logsFilters.action}
+                      onChange={(e) =>
+                        setLogsFilters((prev) => ({ ...prev, action: e.target.value }))
+                      }
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      placeholder="ex: produit:create"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      Recherche (email/action/path)
+                    </label>
+                    <input
+                      type="text"
+                      value={logsFilters.q}
+                      onChange={(e) => setLogsFilters((prev) => ({ ...prev, q: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      placeholder="email, route…"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      Magasin ID
+                    </label>
+                    <input
+                      type="number"
+                      value={logsFilters.magasinId}
+                      onChange={(e) =>
+                        setLogsFilters((prev) => ({ ...prev, magasinId: e.target.value }))
+                      }
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      placeholder="ex: 1"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      Succès/erreur
+                    </label>
+                    <select
+                      value={logsFilters.success}
+                      onChange={(e) =>
+                        setLogsFilters((prev) => ({ ...prev, success: e.target.value }))
+                      }
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                    >
+                      <option value="all">Tous</option>
+                      <option value="true">Succès</option>
+                      <option value="false">Erreurs</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      Limite
+                    </label>
+                    <select
+                      value={logsFilters.limit}
+                      onChange={(e) =>
+                        setLogsFilters((prev) => ({
+                          ...prev,
+                          limit: Number(e.target.value) || 50,
+                        }))
+                      }
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                    >
+                      {[25, 50, 100, 150, 200].map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    onClick={fetchAuditLogs}
+                    className="inline-flex items-center h-10 mt-6 rounded-lg bg-slate-800 hover:bg-slate-900 text-white px-4 text-sm font-semibold transition"
+                  >
+                    {logsLoading ? 'Chargement...' : 'Recharger'}
+                  </button>
+                </div>
+
+                {logsError && (
+                  <div className="px-4 py-3 rounded-lg border bg-red-50 border-red-200 text-red-700">
+                    {logsError}
+                  </div>
+                )}
+
+                <div className="overflow-x-auto border border-slate-100 rounded-lg">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-700 border-b border-slate-200">
+                        <th className="px-3 py-2 font-semibold">Date</th>
+                        <th className="px-3 py-2 font-semibold">Action</th>
+                        <th className="px-3 py-2 font-semibold">Utilisateur</th>
+                        <th className="px-3 py-2 font-semibold">Magasin</th>
+                        <th className="px-3 py-2 font-semibold">Ressource</th>
+                        <th className="px-3 py-2 font-semibold">Succès</th>
+                        <th className="px-3 py-2 font-semibold">Détails</th>
+                        <th className="px-3 py-2 font-semibold">Req ID</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {logsLoading ? (
+                        <tr>
+                          <td className="px-3 py-4 text-center text-slate-600" colSpan={8}>
+                            Chargement des logs...
+                          </td>
+                        </tr>
+                      ) : logs.length === 0 ? (
+                        <tr>
+                          <td className="px-3 py-4 text-center text-slate-600" colSpan={8}>
+                            Aucun log pour ces filtres.
+                          </td>
+                        </tr>
+                      ) : (
+                        logs.map((log) => (
+                          <tr
+                            key={log.id}
+                            className="border-b last:border-0 border-slate-100 hover:bg-slate-50"
+                          >
+                            <td className="px-3 py-2 text-slate-600">
+                              {formatDateTime(log.createdAt)}
+                            </td>
+                            <td className="px-3 py-2 text-slate-900 font-semibold">
+                              {log.action}
+                            </td>
+                            <td className="px-3 py-2 text-slate-700">
+                              {log.userEmail || log.userId || '-'}
+                            </td>
+                            <td className="px-3 py-2 text-slate-700">
+                              {log.magasinId ?? '—'}
+                            </td>
+                            <td className="px-3 py-2 text-slate-700">
+                              {log.resourceType || '-'}
+                              {log.resourceId ? ` #${log.resourceId}` : ''}
+                            </td>
+                            <td className="px-3 py-2">
+                              <span
+                                className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                  log.success
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : 'bg-red-100 text-red-700'
+                                }`}
+                              >
+                                {log.success ? 'OK' : 'Erreur'}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-slate-600">
+                              {detailsPreview(log.details)}
+                            </td>
+                            <td className="px-3 py-2 text-slate-500 text-xs">
+                              {log.requestId || '—'}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             )}
 
           {activeSection === 'admin' && (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && (

@@ -8,6 +8,7 @@ import {
   buildCommandeLogContent,
   buildCommandeLogFileName,
 } from '../utils/commandeLog.js';
+import { logAudit } from '../utils/audit.js';
 
 const router = express.Router();
 
@@ -442,6 +443,15 @@ router.post('/valider', requirePermission('commandes:validate'), async (req, res
       },
     });
 
+    await logAudit({
+      req,
+      action: 'commande:create',
+      resourceType: 'commande',
+      resourceId: commande.id,
+      magasinId: resolvedMagasinId ?? null,
+      details: { lignes: validLines.length, dateCommande: dateCmd, dateLivraisonPrevue: dateLiv },
+    });
+
     return res.status(201).json(commande);
   } catch (err) {
     console.error('Erreur POST /commandes/valider :', err);
@@ -563,6 +573,15 @@ router.post('/:id/recevoir', requirePermission('commandes:receive'), async (req,
       },
     });
 
+    await logAudit({
+      req,
+      action: 'commande:receive',
+      resourceType: 'commande',
+      resourceId: commande.id,
+      magasinId: commande.magasinId ?? resolvedMagasinId ?? null,
+      details: { lignes: updates.length, dateReception: receptionDate },
+    });
+
     return res.json(commandeFinale);
   } catch (err) {
     console.error('Erreur POST /commandes/:id/recevoir :', err);
@@ -591,6 +610,14 @@ router.post('/:id/annuler', requirePermission('commandes:cancel'), async (req, r
     await prisma.commande.update({
       where: { id: commande.id },
       data: { statut: 'ANNULEE' },
+    });
+
+    await logAudit({
+      req,
+      action: 'commande:annuler',
+      resourceType: 'commande',
+      resourceId: commande.id,
+      magasinId: commande.magasinId ?? resolvedMagasinId ?? null,
     });
 
     return res.json({ message: 'Commande annulée.' });
@@ -917,6 +944,15 @@ router.get('/:id/pdf', requirePermission('commandes:pdf'), async (req, res) => {
       return res.status(403).json({ error: 'Commande hors de votre magasin' });
     }
 
+    await logAudit({
+      req,
+      action: 'commande:export:pdf',
+      resourceType: 'commande',
+      resourceId: commande.id,
+      magasinId: commande.magasinId ?? resolvedMagasinId ?? null,
+      details: { format: 'pdf', type: 'commande' },
+    });
+
     await buildCommandePDF(res, commande);
   } catch (err) {
     console.error('Erreur GET /commandes/:id/pdf :', err);
@@ -952,6 +988,16 @@ router.get('/:id/log-txt', requirePermission('commandes:pdf'), async (req, res) 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     res.setHeader('Content-Length', Buffer.byteLength(content, 'utf8'));
+
+    await logAudit({
+      req,
+      action: 'commande:export:log',
+      resourceType: 'commande',
+      resourceId: commande.id,
+      magasinId: commande.magasinId ?? resolvedMagasinId ?? null,
+      details: { format: 'txt', lignes: commande.lignes.length },
+    });
+
     return res.send(content);
   } catch (err) {
     console.error('Erreur GET /commandes/:id/log-txt :', err);
@@ -980,6 +1026,15 @@ router.get('/:id/reception-pdf', requirePermission('commandes:pdf'), async (req,
     if (resolvedMagasinId && commande.magasinId !== resolvedMagasinId) {
       return res.status(403).json({ error: 'Commande hors de votre magasin' });
     }
+
+    await logAudit({
+      req,
+      action: 'commande:export:pdf',
+      resourceType: 'commande',
+      resourceId: commande.id,
+      magasinId: commande.magasinId ?? resolvedMagasinId ?? null,
+      details: { format: 'pdf', type: 'reception' },
+    });
 
     await buildReceptionPDF(res, commande);
   } catch (err) {

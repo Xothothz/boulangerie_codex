@@ -2,6 +2,7 @@ import express from 'express';
 import prisma from '../config/db.js';
 import { ensureMagasin, getMagasinScope } from '../utils/magasin.js';
 import { requirePermission } from '../utils/permissions.js';
+import { logAudit } from '../utils/audit.js';
 
 const router = express.Router();
 
@@ -56,6 +57,15 @@ router.post('/', requirePermission('ventes:record'), async (req, res) => {
         nature: 'VENTE',
         date: date ? new Date(date) : undefined,
       },
+    });
+
+    await logAudit({
+      req,
+      action: 'ventes:record',
+      resourceType: 'produit',
+      resourceId: Number(produitId),
+      magasinId: resolvedMagasinId ?? null,
+      details: { quantite: q, nature: 'VENTE' },
     });
 
     return res.status(201).json(mouvement);
@@ -116,6 +126,15 @@ router.post('/pertes', requirePermission('pertes:record'), async (req, res) => {
         nature: 'PERTE',
         date: date ? new Date(date) : undefined,
       },
+    });
+
+    await logAudit({
+      req,
+      action: 'pertes:record',
+      resourceType: 'produit',
+      resourceId: Number(produitId),
+      magasinId: resolvedMagasinId ?? null,
+      details: { quantite: q, nature: 'PERTE' },
     });
 
     return res.status(201).json(mouvement);

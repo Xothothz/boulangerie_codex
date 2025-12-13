@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import prisma from '../config/db.js';
 import authMiddleware from '../middlewares/auth.js';
+import { logAudit } from '../utils/audit.js';
 
 const router = express.Router();
 
@@ -100,6 +101,15 @@ router.post('/google', async (req, res) => {
 
     const token = generateToken(user);
 
+    await logAudit({
+      req,
+      user,
+      action: 'auth:google',
+      resourceType: 'auth',
+      resourceId: user.id,
+      details: { email: user.email },
+    });
+
     return res.json({
       token,
       user: {
@@ -146,6 +156,16 @@ router.post('/dev-login', async (req, res) => {
     }
 
     const token = generateToken(user);
+
+    await logAudit({
+      req,
+      user,
+      action: 'auth:dev-login',
+      resourceType: 'auth',
+      resourceId: user.id,
+      details: { email: user.email, role: user.role },
+    });
+
     return res.json({
       token,
       user: {

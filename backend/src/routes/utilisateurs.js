@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../config/db.js';
 import { requirePermission } from '../utils/permissions.js';
+import { logAudit } from '../utils/audit.js';
 
 const router = express.Router();
 
@@ -56,6 +57,14 @@ router.put('/:id/magasin', requirePermission('utilisateurs:affecter'), async (re
         magasin: { select: { id: true, nom: true } },
       },
     });
+    await logAudit({
+      req,
+      action: 'utilisateur:affecter',
+      resourceType: 'utilisateur',
+      resourceId: user.id,
+      magasinId: user.magasinId ?? null,
+      details: { magasinId: user.magasinId ?? null },
+    });
     res.json(user);
   } catch (err) {
     console.error('Erreur PUT /utilisateurs/:id/magasin :', err);
@@ -86,6 +95,14 @@ router.put('/:id/role', requirePermission('utilisateurs:role'), async (req, res)
         magasinId: true,
         magasin: { select: { id: true, nom: true } },
       },
+    });
+    await logAudit({
+      req,
+      action: 'utilisateur:role',
+      resourceType: 'utilisateur',
+      resourceId: user.id,
+      magasinId: user.magasinId ?? null,
+      details: { role },
     });
     res.json(user);
   } catch (err) {

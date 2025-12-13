@@ -3,6 +3,7 @@ import prisma from '../config/db.js';
 import { ensureMagasin, getMagasinScope } from '../utils/magasin.js';
 import { requirePermission } from '../utils/permissions.js';
 import xlsx from 'xlsx';
+import { logAudit } from '../utils/audit.js';
 
 const router = express.Router();
 
@@ -218,6 +219,21 @@ router.post('/', requirePermission('produits:create'), async (req, res) => {
       },
     });
 
+    await logAudit({
+      req,
+      action: 'produit:create',
+      resourceType: 'produit',
+      resourceId: produit.id,
+      magasinId: targetMagasinId || null,
+      details: {
+        nom,
+        reference: produit.reference,
+        categorieId: categorieConnectId,
+        prixVente: Number(prixVente),
+        prixAchat: prixAchat === '' ? null : prixAchat,
+      },
+    });
+
     res.status(201).json(produit);
   } catch (err) {
     if (err.code === 'P2002' && err.meta?.target?.includes('reference')) {
@@ -346,6 +362,23 @@ router.put('/:id', requirePermission('produits:update'), async (req, res) => {
       },
     });
 
+    await logAudit({
+      req,
+      action: 'produit:update',
+      resourceType: 'produit',
+      resourceId: id,
+      magasinId: produitScope.magasinId ?? resolvedMagasinId ?? null,
+      details: {
+        nom,
+        reference: finalReference,
+        categorieId: categorieConnectId,
+        actif,
+        prixVente,
+        prixAchat,
+        unitesCarton,
+      },
+    });
+
     res.json(produit);
   } catch (err) {
     if (err.code === 'P2025') {
@@ -377,6 +410,15 @@ router.delete('/:id', requirePermission('produits:toggle'), async (req, res) => 
     const produit = await prisma.produit.update({
       where: { id, ...(resolvedMagasinId ? { magasinId: resolvedMagasinId } : {}) },
       data: { actif: false },
+    });
+
+    await logAudit({
+      req,
+      action: 'produit:disable',
+      resourceType: 'produit',
+      resourceId: id,
+      magasinId: resolvedMagasinId ?? null,
+      details: { previousActif: produit.actif, setTo: false },
     });
 
     res.json({ message: 'Produit désactivé', produit });
@@ -477,6 +519,15 @@ router.get('/export-excel', requirePermission('produits:update'), async (req, re
       'Content-Type',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
+
+    await logAudit({
+      req,
+      action: 'produit:export',
+      resourceType: 'produit',
+      magasinId: resolvedMagasinId ?? null,
+      details: { count: produits.length, format: 'xlsx' },
+    });
+
     return res.send(buffer);
   } catch (err) {
     console.error('Erreur GET /produits/export-excel :', err);
@@ -654,7 +705,16 @@ router.post('/import-excel', requirePermission('produits:update'), async (req, r
       }
     }
 
-    return res.json({ created, updated, errors });
+    const payload = { created, updated, errorsCount: errors.length };
+    await logAudit({
+      req,
+      action: 'produit:import',
+      resourceType: 'produit',
+      magasinId: resolvedMagasinId ?? null,
+      details: payload,
+    });
+
+    return res.json({ ...payload, errors });
   } catch (err) {
     console.error('Erreur POST /produits/import-excel :', err);
     return res.status(500).json({ error: 'Erreur lors de l’import Excel produits.' });

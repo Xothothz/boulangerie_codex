@@ -2,6 +2,7 @@ import express from 'express';
 import prisma from '../config/db.js';
 import { ensureMagasin, getMagasinScope } from '../utils/magasin.js';
 import { requirePermission } from '../utils/permissions.js';
+import { logAudit } from '../utils/audit.js';
 
 const router = express.Router();
 
@@ -49,6 +50,14 @@ router.post('/', requirePermission('categories:create'), async (req, res) => {
         magasinId: resolvedMagasinId,
       },
     });
+    await logAudit({
+      req,
+      action: 'categorie:create',
+      resourceType: 'categorie',
+      resourceId: categorie.id,
+      magasinId: resolvedMagasinId,
+      details: { nom: categorie.nom, couleur: categorie.couleur },
+    });
     res.status(201).json(categorie);
   } catch (err) {
     if (err.code === 'P2002') {
@@ -83,6 +92,14 @@ router.put('/:id', requirePermission('categories:update'), async (req, res) => {
         couleur: couleur === undefined ? undefined : normalizeHexColor(couleur),
       },
     });
+    await logAudit({
+      req,
+      action: 'categorie:update',
+      resourceType: 'categorie',
+      resourceId: id,
+      magasinId: resolvedMagasinId,
+      details: { nom, actif, couleur },
+    });
     res.json(categorie);
   } catch (err) {
     if (err.code === 'P2025') {
@@ -111,6 +128,13 @@ router.delete('/:id', requirePermission('categories:delete'), async (req, res) =
     const categorie = await prisma.categorie.update({
       where: { id, ...(resolvedMagasinId ? { magasinId: resolvedMagasinId } : {}) },
       data: { actif: false },
+    });
+    await logAudit({
+      req,
+      action: 'categorie:disable',
+      resourceType: 'categorie',
+      resourceId: id,
+      magasinId: resolvedMagasinId,
     });
     res.json({ message: 'Catégorie désactivée', categorie });
   } catch (err) {

@@ -7,6 +7,7 @@ import PDFDocument from 'pdfkit';
 import { getWeekDateRange } from '../utils/week.js';
 import { ensureMagasin, getMagasinScope } from '../utils/magasin.js';
 import { hasPermission, requirePermission } from '../utils/permissions.js';
+import { logAudit } from '../utils/audit.js';
 
 const router = express.Router();
 
@@ -243,6 +244,19 @@ async function importExcel(req, res, typeLabel) {
       set.add(mv.produitId);
       return set;
     }, new Set());
+
+    await logAudit({
+      req,
+      action: `semaine:import:${typeLabel}`,
+      resourceType: 'mouvement_stock',
+      magasinId: resolvedMagasinId ?? null,
+      details: {
+        sem,
+        produits_trouves: produitsTrouves.size,
+        produits_non_trouves: produitsNonTrouves.length,
+        mouvements_enregistres: mouvementsEnregistres,
+      },
+    });
 
     return res.json({
       produits_trouves: produitsTrouves.size,
@@ -495,6 +509,14 @@ router.get('/feuille-excel', async (req, res) => {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
 
+    await logAudit({
+      req,
+      action: 'semaine:export:excel',
+      resourceType: 'feuille_semaine',
+      magasinId: resolvedMagasinId ?? null,
+      details: { sem, produits: produits.length, format: 'xlsx', type: 'vierge' },
+    });
+
     return res.send(buffer);
   } catch (err) {
     console.error('Erreur feuille-excel :', err);
@@ -559,6 +581,14 @@ router.get('/feuille-pdf', async (req, res) => {
     );
 
     doc.pipe(res);
+
+    await logAudit({
+      req,
+      action: 'semaine:export:pdf',
+      resourceType: 'feuille_semaine',
+      magasinId: resolvedMagasinId ?? null,
+      details: { sem, produits: produits.length, format: 'pdf', type: 'vierge' },
+    });
 
     const formatDate = (d) =>
       d.toLocaleDateString('fr-FR', {
@@ -656,6 +686,14 @@ feuilleTypes.forEach(({ key, label, fileSuffix }) => {
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       );
 
+      await logAudit({
+        req,
+        action: `semaine:export:${key}:excel`,
+        resourceType: 'feuille_semaine',
+        magasinId: resolvedMagasinId ?? null,
+        details: { sem, produits: produits.length, format: 'xlsx', type: key },
+      });
+
       return res.send(buffer);
     } catch (err) {
       console.error(`Erreur feuille-excel-${key} :`, err);
@@ -712,6 +750,14 @@ feuilleTypes.forEach(({ key, label, fileSuffix }) => {
       );
 
       doc.pipe(res);
+
+      await logAudit({
+        req,
+        action: `semaine:export:${key}:pdf`,
+        resourceType: 'feuille_semaine',
+        magasinId: resolvedMagasinId ?? null,
+        details: { sem, produits: produits.length, format: 'pdf', type: key },
+      });
 
       const formatDate = (d) =>
         d.toLocaleDateString('fr-FR', {

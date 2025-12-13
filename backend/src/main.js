@@ -18,6 +18,7 @@ import adminRouter from './routes/admin.js';
 import permissionsRouter from './routes/permissions.js';
 import profilRouter from './routes/profil.js';
 import authMiddleware from './middlewares/auth.js';
+import requestContext from './middlewares/requestContext.js';
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -29,6 +30,7 @@ const ALLOWED_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:5173')
   .map((o) => o.trim())
   .filter(Boolean);
 
+app.use(requestContext);
 app.use(
   cors({
     origin: (origin, callback) => {

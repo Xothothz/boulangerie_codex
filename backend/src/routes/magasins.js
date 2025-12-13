@@ -2,6 +2,7 @@ import express from 'express';
 import prisma from '../config/db.js';
 import { getMagasinScope } from '../utils/magasin.js';
 import { requirePermission } from '../utils/permissions.js';
+import { logAudit } from '../utils/audit.js';
 
 const router = express.Router();
 
@@ -66,6 +67,14 @@ router.post('/', requirePermission('magasins:create'), async (req, res) => {
         delaisLivraison: delaisLivraison || undefined,
       },
     });
+    await logAudit({
+      req,
+      action: 'magasin:create',
+      resourceType: 'magasin',
+      resourceId: magasin.id,
+      magasinId: magasin.id,
+      details: { nom: magasin.nom, code: magasin.code },
+    });
     res.status(201).json(magasin);
   } catch (err) {
     console.error('Erreur POST /magasins :', err);
@@ -110,6 +119,14 @@ router.put('/:id', requirePermission('magasins:update'), async (req, res) => {
         delaisLivraison: delaisLivraison === undefined ? undefined : delaisLivraison || null,
       },
     });
+    await logAudit({
+      req,
+      action: 'magasin:update',
+      resourceType: 'magasin',
+      resourceId: id,
+      magasinId: id,
+      details: { nom, code, actif },
+    });
     res.json(magasin);
   } catch (err) {
     console.error('Erreur PUT /magasins/:id :', err);
@@ -137,6 +154,14 @@ router.delete('/:id', requirePermission('magasins:delete'), async (req, res) => 
     const magasin = await prisma.magasin.update({
       where: { id },
       data: { actif: false },
+    });
+    await logAudit({
+      req,
+      action: 'magasin:disable',
+      resourceType: 'magasin',
+      resourceId: id,
+      magasinId: id,
+      details: { actif: false },
     });
     res.json({ message: 'Magasin désactivé', magasin });
   } catch (err) {

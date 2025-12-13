@@ -2,6 +2,7 @@ import express from 'express';
 import prisma from '../config/db.js';
 import { ensureMagasin, getMagasinScope } from '../utils/magasin.js';
 import { requirePermission } from '../utils/permissions.js';
+import { logAudit } from '../utils/audit.js';
 
 const router = express.Router();
 
@@ -180,7 +181,7 @@ router.get('/overview', requirePermission('stats:read'), async (req, res) => {
       });
     }
 
-    return res.json({
+    const payload = {
       period: {
         start: startDate.toISOString(),
         end: endDate.toISOString(),
@@ -191,7 +192,22 @@ router.get('/overview', requirePermission('stats:read'), async (req, res) => {
       topVentes,
       topPertes: topPertesSlice,
       stock,
+    };
+
+    await logAudit({
+      req,
+      action: 'stats:overview',
+      resourceType: 'stats',
+      magasinId: resolvedMagasinId ?? null,
+      details: {
+        start: payload.period.start,
+        end: payload.period.end,
+        produitId: produitId ? Number(produitId) : null,
+        categorieId: categorieId ? Number(categorieId) : null,
+      },
     });
+
+    return res.json(payload);
   } catch (err) {
     console.error('Erreur GET /stats/overview :', err);
     return res.status(500).json({ error: 'Erreur serveur' });
