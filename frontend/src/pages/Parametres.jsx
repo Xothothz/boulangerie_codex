@@ -6,6 +6,11 @@ import { useMagasin } from '../context/MagasinContext'
 function Parametres() {
   const { token, logout, user } = useAuth()
   const { selectedMagasinId } = useMagasin()
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN'
+  const hasPerm = (code) =>
+    isAdmin ||
+    user?.permissions?.includes('*') ||
+    user?.permissions?.includes(code)
   const [activeSection, setActiveSection] = useState('magasins')
   const [magasins, setMagasins] = useState([])
   const [loading, setLoading] = useState(false)
@@ -96,7 +101,7 @@ function Parametres() {
         throw new Error('Session expirée, merci de vous reconnecter.')
       }
       if (response.status === 403) {
-        throw new Error('Accès refusé : rôle ADMIN requis.')
+        throw new Error('Accès refusé : permission audit:read requise.')
       }
       if (!response.ok) {
         const t = await response.text()
@@ -146,7 +151,7 @@ function Parametres() {
   }, [selectedMagasinId])
 
   useEffect(() => {
-    if (activeSection === 'permissions') {
+    if (activeSection === 'permissions' && hasPerm('permissions:manage')) {
       if (permDefs.permissions.length === 0) {
         fetchPermissionDefinitions()
       }
@@ -154,7 +159,7 @@ function Parametres() {
         fetchUsers()
       }
     }
-    if (activeSection === 'logs' && !logsLoading && logs.length === 0) {
+    if (activeSection === 'logs' && hasPerm('audit:read') && !logsLoading && logs.length === 0) {
       fetchAuditLogs()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -173,7 +178,7 @@ function Parametres() {
         throw new Error('Session expirée, merci de vous reconnecter.')
       }
       if (response.status === 403) {
-        throw new Error('Accès refusé : rôle ADMIN requis.')
+        throw new Error('Accès refusé : permission requise.')
       }
       if (!response.ok) {
         const errorText = await response.text()
@@ -190,7 +195,7 @@ function Parametres() {
   }
 
   useEffect(() => {
-    if (activeSection === 'utilisateurs') {
+    if (activeSection === 'utilisateurs' && (hasPerm('utilisateurs:list') || hasPerm('permissions:manage'))) {
       fetchUsers()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -637,7 +642,7 @@ function Parametres() {
           >
             Utilisateurs
           </button>
-          {(user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && (
+          {hasPerm('permissions:manage') && (
             <button
               className={`text-left px-4 py-3 text-sm font-semibold ${
                 activeSection === 'permissions'
@@ -649,7 +654,7 @@ function Parametres() {
               Permissions
             </button>
           )}
-          {(user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && (
+          {hasPerm('audit:read') && (
             <button
               className={`text-left px-4 py-3 text-sm font-semibold ${
                 activeSection === 'logs'
@@ -658,10 +663,10 @@ function Parametres() {
               }`}
               onClick={() => setActiveSection('logs')}
             >
-              Logs
-            </button>
+            Logs
+          </button>
           )}
-          {user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' ? (
+          {isAdmin ? (
             <button
               className={`text-left px-4 py-3 text-sm font-semibold ${
                 activeSection === 'admin'

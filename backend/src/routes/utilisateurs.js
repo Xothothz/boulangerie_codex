@@ -5,18 +5,8 @@ import { logAudit } from '../utils/audit.js';
 
 const router = express.Router();
 
-function ensureAdmin(req, res) {
-  if (!req.user || (req.user.role !== 'ADMIN' && req.user.role !== 'SUPER_ADMIN')) {
-    res.status(403).json({ error: 'Accès refusé : rôle ADMIN requis.' });
-    return false;
-  }
-  return true;
-}
-
 // Liste des utilisateurs (ADMIN)
 router.get('/', requirePermission('utilisateurs:list'), async (req, res) => {
-  if (!ensureAdmin(req, res)) return;
-
   try {
     const users = await prisma.utilisateur.findMany({
       orderBy: { email: 'asc' },
@@ -39,7 +29,6 @@ router.get('/', requirePermission('utilisateurs:list'), async (req, res) => {
 
 // Affecter un utilisateur à un magasin (ou null)
 router.put('/:id/magasin', requirePermission('utilisateurs:affecter'), async (req, res) => {
-  if (!ensureAdmin(req, res)) return;
   const { id } = req.params;
   const { magasinId } = req.body;
 
@@ -74,7 +63,6 @@ router.put('/:id/magasin', requirePermission('utilisateurs:affecter'), async (re
 
 // Changer le rôle d'un utilisateur (ADMIN)
 router.put('/:id/role', requirePermission('utilisateurs:role'), async (req, res) => {
-  if (!ensureAdmin(req, res)) return;
   const { id } = req.params;
   const { role } = req.body;
 

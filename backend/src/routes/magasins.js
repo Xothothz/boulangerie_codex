@@ -43,11 +43,6 @@ router.get('/', async (req, res) => {
  * Body JSON : { "nom": "Texte", "code": "CODE01" }
  */
 router.post('/', requirePermission('magasins:create'), async (req, res) => {
-  const { isAdmin } = getMagasinScope(req);
-  if (!isAdmin) {
-    return res.status(403).json({ error: 'Accès refusé' });
-  }
-
   const { nom, code } = req.body;
   const joursCommande = Array.isArray(req.body?.joursCommande)
     ? req.body.joursCommande.map((d) => Number(d)).filter((d) => !Number.isNaN(d))
@@ -87,11 +82,6 @@ router.post('/', requirePermission('magasins:create'), async (req, res) => {
  * Met à jour un magasin.
  */
 router.put('/:id', requirePermission('magasins:update'), async (req, res) => {
-  const { isAdmin } = getMagasinScope(req);
-  if (!isAdmin) {
-    return res.status(403).json({ error: 'Accès refusé' });
-  }
-
   const id = Number(req.params.id);
   const { nom, code, actif } = req.body;
   const joursCommande = Array.isArray(req.body?.joursCommande)
@@ -139,11 +129,6 @@ router.put('/:id', requirePermission('magasins:update'), async (req, res) => {
  * Désactive le magasin (soft delete).
  */
 router.delete('/:id', requirePermission('magasins:delete'), async (req, res) => {
-  const { isAdmin } = getMagasinScope(req);
-  if (!isAdmin) {
-    return res.status(403).json({ error: 'Accès refusé' });
-  }
-
   const id = Number(req.params.id);
 
   if (Number.isNaN(id)) {

@@ -73,9 +73,7 @@ router.post('/purge-mouvements', requirePermission('admin:purge:mouvements'), as
 });
 
 // Lecture des logs d'audit (ADMIN/SUPER_ADMIN)
-router.get('/audit-logs', async (req, res) => {
-  if (!ensureAdmin(req, res)) return;
-
+router.get('/audit-logs', requirePermission('audit:read'), async (req, res) => {
   const {
     limit = 50,
     action,

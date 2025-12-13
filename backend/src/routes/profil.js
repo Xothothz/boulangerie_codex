@@ -75,7 +75,7 @@ router.put('/me', async (req, res) => {
 // Admin : mise à jour profil d'un autre utilisateur (nom/prenom)
 router.put(
   '/utilisateurs/:id',
-  requirePermission('utilisateurs:list'),
+  requirePermission('utilisateurs:edit'),
   async (req, res) => {
     const { id } = req.params;
     const userId = Number(id);

@@ -22,7 +22,19 @@ function Layout({ title, children }) {
     useMagasin()
 
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN'
-  const navItems = isAdmin
+  const hasPerm = (code) =>
+    isAdmin ||
+    user?.permissions?.includes('*') ||
+    user?.permissions?.includes(code)
+
+  const canSeeParametres =
+    isAdmin ||
+    hasPerm('permissions:manage') ||
+    hasPerm('magasins:create') ||
+    hasPerm('utilisateurs:list') ||
+    hasPerm('audit:read')
+
+  const navItems = canSeeParametres
     ? [...baseNav.slice(0, -1), { to: '/parametres', label: 'Paramètres' }, baseNav[baseNav.length - 1]]
     : baseNav
 

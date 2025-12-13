@@ -18,6 +18,12 @@ function startOfDay(d) {
   return copy;
 }
 
+function addDays(d, days) {
+  const copy = new Date(d);
+  copy.setDate(copy.getDate() + days);
+  return copy;
+}
+
 function endOfDay(d) {
   const copy = new Date(d);
   copy.setHours(23, 59, 59, 999);

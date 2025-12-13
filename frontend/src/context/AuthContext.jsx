@@ -12,9 +12,17 @@ const AuthContext = createContext(undefined)
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem('token'))
+  const normalizeUser = (value) => {
+    if (!value) return null
+    return {
+      ...value,
+      permissions: Array.isArray(value.permissions) ? value.permissions : [],
+    }
+  }
+
   const [user, setUser] = useState(() => {
     const stored = localStorage.getItem('user')
-    return stored ? JSON.parse(stored) : null
+    return stored ? normalizeUser(JSON.parse(stored)) : null
   })
   const [profileRefreshing, setProfileRefreshing] = useState(false)
   const [initializing, setInitializing] = useState(true)
@@ -27,10 +35,11 @@ export function AuthProvider({ children }) {
   }, [])
 
   const login = useCallback((newToken, newUser) => {
+    const normalized = normalizeUser(newUser)
     setToken(newToken)
-    setUser(newUser)
+    setUser(normalized)
     localStorage.setItem('token', newToken)
-    localStorage.setItem('user', JSON.stringify(newUser))
+    localStorage.setItem('user', JSON.stringify(normalized))
   }, [])
 
   useEffect(() => {
@@ -52,8 +61,9 @@ export function AuthProvider({ children }) {
         }
 
         const data = await response.json()
-        setUser(data.user)
-        localStorage.setItem('user', JSON.stringify(data.user))
+        const normalized = normalizeUser(data.user)
+        setUser(normalized)
+        localStorage.setItem('user', JSON.stringify(normalized))
       } catch (err) {
         console.error('Erreur /auth/me', err)
         logout()
@@ -74,8 +84,9 @@ export function AuthProvider({ children }) {
       })
       if (!response.ok) throw new Error('Erreur chargement profil')
       const data = await response.json()
-      setUser(data.user)
-      localStorage.setItem('user', JSON.stringify(data.user))
+      const normalized = normalizeUser(data.user)
+      setUser(normalized)
+      localStorage.setItem('user', JSON.stringify(normalized))
     } catch (err) {
       console.error('Erreur refresh profile', err)
     } finally {

@@ -31,6 +31,16 @@ function generateToken(user) {
   );
 }
 
+async function loadPermissionsForUser(user) {
+  if (!user) return [];
+  if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') return ['*'];
+  const perms = await prisma.utilisateurPermission.findMany({
+    where: { utilisateurId: user.id },
+    select: { code: true },
+  });
+  return perms.map((p) => p.code);
+}
+
 router.post('/google', async (req, res) => {
   const { idToken } = req.body;
 
@@ -99,6 +109,7 @@ router.post('/google', async (req, res) => {
       where: { id: user.id },
     });
 
+    const permissions = await loadPermissionsForUser(user);
     const token = generateToken(user);
 
     await logAudit({
@@ -119,6 +130,7 @@ router.post('/google', async (req, res) => {
         prenom: user.prenom,
         role: user.role,
         magasinId: user.magasinId,
+        permissions,
         picture: payload.picture || null,
       },
     });
@@ -155,6 +167,7 @@ router.post('/dev-login', async (req, res) => {
       });
     }
 
+    const permissions = await loadPermissionsForUser(user);
     const token = generateToken(user);
 
     await logAudit({
@@ -175,6 +188,7 @@ router.post('/dev-login', async (req, res) => {
         prenom: user.prenom,
         role: user.role,
         magasinId: user.magasinId,
+        permissions,
         picture: null,
       },
     });
@@ -202,7 +216,12 @@ router.get('/me', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Utilisateur introuvable' });
     }
 
-    return res.json({ user });
+    const permissions =
+      Array.isArray(req.user?.permissions) && req.user.permissions.length
+        ? req.user.permissions
+        : await loadPermissionsForUser(user);
+
+    return res.json({ user: { ...user, permissions } });
   } catch (err) {
     console.error('Erreur GET /auth/me :', err);
     return res.status(500).json({ error: 'Erreur serveur' });

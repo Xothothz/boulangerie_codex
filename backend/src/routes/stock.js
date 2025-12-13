@@ -307,7 +307,7 @@ router.post('/inventaire-import', requirePermission('inventaire:import'), async 
 });
 
 // Liste des inventaires
-router.get('/inventaires', async (req, res) => {
+router.get('/inventaires', requirePermission('inventaire:read'), async (req, res) => {
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
   if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;
 
@@ -616,7 +616,7 @@ router.post('/inventaire/:id/modifier-ligne', requirePermission('inventaire:edit
  *   - type : ENTREE | SORTIE | AJUSTEMENT
  *   - nature : VENTE | PERTE | RECEPTION | INVENTAIRE | AUTRE
  */
-router.get('/mouvements', async (req, res) => {
+router.get('/mouvements', requirePermission('stock:read'), async (req, res) => {
   const { produitId, type, nature } = req.query;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 
@@ -659,7 +659,7 @@ router.get('/mouvements', async (req, res) => {
  * Retourne, par produit, le stock courant et la valorisation HT/TTC
  * (HT basé sur prixAchat, TTC basé sur prixVente).
  */
-router.get('/valorisation', async (req, res) => {
+router.get('/valorisation', requirePermission('stock:read'), async (req, res) => {
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 
   if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;
@@ -741,7 +741,7 @@ router.get('/valorisation', async (req, res) => {
 });
 
 // Export PDF valorisation stock
-router.get('/valorisation/pdf', async (req, res) => {
+router.get('/valorisation/pdf', requirePermission('stock:read'), async (req, res) => {
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 
   if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;
@@ -986,7 +986,7 @@ router.get('/valorisation/pdf', async (req, res) => {
  * Retourne le stock courant pour chaque produit.
  * Calcul : stock = somme(quantite) des mouvements, groupés par produitId.
  */
-router.get('/produits', async (req, res) => {
+router.get('/produits', requirePermission('stock:read'), async (req, res) => {
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
 
   if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;
@@ -1085,7 +1085,7 @@ router.post('/inventaire', requirePermission('inventaire:create'), async (req, r
 });
 
 // GET mouvements semaine (ventes/pertes) agrégés par produit/jour
-router.get('/mouvements-semaine', async (req, res) => {
+router.get('/mouvements-semaine', requirePermission('stock:read'), async (req, res) => {
   const { sem, type } = req.query;
   const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
   if (!sem) {
