@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../config/db.js';
 import xlsx from 'xlsx';
+import ExcelJS from 'exceljs';
 import path from 'path';
 import fs from 'fs';
 import PDFDocument from 'pdfkit';
@@ -156,6 +157,9 @@ async function importExcel(req, res, typeLabel) {
     const workbook = xlsx.readFile(tempPath);
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
+    const headerRow =
+      xlsx.utils.sheet_to_json(sheet, { header: 1, range: 0, blankrows: false, defval: '' })[0] ||
+      [];
     // Nos templates placent les en-têtes en première ligne
     const rows = xlsx.utils.sheet_to_json(sheet, { defval: '' });
 
@@ -177,6 +181,26 @@ async function importExcel(req, res, typeLabel) {
       const date = days[idx];
       return `${jour} (${formatDate(date)})`;
     });
+
+    // Vérifie que les en-têtes de jour correspondent à la semaine ciblée (évite import croisé)
+    const headerStrings = headerRow.map((h) => String(h || ''));
+    const expectedDates = days.map((d) => formatDate(d));
+    for (let i = 0; i < jours.length; i++) {
+      const jour = jours[i];
+      const expectedDate = expectedDates[i];
+      const found = headerStrings.find((h) => normalizeHeaderKey(h).startsWith(normalizeHeaderKey(jour)));
+      if (!found) {
+        return res.status(400).json({
+          error: `Colonne "${jour}" absente ou invalide dans le fichier (semaine attendue: ${sem}).`,
+        });
+      }
+      const matchDate = (String(found).match(/\(([^)]+)\)/) || [])[1] || '';
+      if (matchDate && matchDate.trim() !== expectedDate && !String(found).includes(expectedDate)) {
+        return res.status(400).json({
+          error: `Le fichier semble être pour une autre semaine (colonne ${jour}: "${found}", attendu: ${expectedDate}).`,
+        });
+      }
+    }
 
     const getValueForDay = (row, jour) => {
       const key = Object.keys(row).find((k) =>
@@ -203,9 +227,15 @@ async function importExcel(req, res, typeLabel) {
 
       for (let i = 0; i < jours.length; i++) {
         const jour = jours[i];
-        const quantite = Number(getValueForDay(row, jour));
+        const rawValue = getValueForDay(row, jour);
+        const cleaned =
+          typeof rawValue === 'string' ? rawValue.trim() : rawValue;
 
-        if (!quantite || quantite <= 0) continue;
+        // Cellule vide ou non renseignée : on ne touche pas aux données existantes
+        if (cleaned === '' || cleaned === null || cleaned === undefined) continue;
+
+        const quantite = Number(rawValue);
+        if (Number.isNaN(quantite) || quantite < 0) continue;
 
         const startDay = new Date(days[i]);
         startDay.setUTCHours(0, 0, 0, 0);
@@ -221,6 +251,11 @@ async function importExcel(req, res, typeLabel) {
             produit: resolvedMagasinId ? { magasinId: resolvedMagasinId } : undefined,
           },
         });
+
+        if (quantite === 0) {
+          // 0 = effacement des valeurs précédentes pour ce jour/produit/nature
+          continue;
+        }
 
         const mouvement = await prisma.mouvementStock.create({
           data: {
@@ -295,36 +330,59 @@ const jours = [
 ];
 
 async function generateExcel(produits, titre, days) {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Semaine', {
+    views: [{ state: 'frozen', ySplit: 1 }],
+    properties: { tabColor: { argb: 'FF0F172A' } },
+  });
+
   const dayLabels = jours.map((jour, idx) => `${jour} (${formatDate(days[idx])})`);
-  const header = ['Produit', ...dayLabels];
-  const rows = produits.map((p) => [p.nom, '', '', '', '', '', '', '']);
-  const worksheet = xlsx.utils.aoa_to_sheet([header, ...rows]);
+  const dayKeys = days.map((d) => d.toISOString().slice(0, 10));
 
-  // Coloration par catégorie (pastel) pour plus de lisibilité.
-  produits.forEach((p, idx) => {
+  sheet.columns = [
+    { header: 'Produit', key: 'produit', width: 36 },
+    ...dayLabels.map((label, idx) => ({
+      header: label,
+      key: dayKeys[idx],
+      width: 18,
+      style: { alignment: { horizontal: 'center', vertical: 'middle' } },
+    })),
+  ];
+
+  const thinBorder = {
+    top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+    bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+    left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+    right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+  };
+
+  const headerRow = sheet.getRow(1);
+  headerRow.height = 26;
+  headerRow.eachCell((cell, colNumber) => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+    cell.alignment = { vertical: 'middle', horizontal: colNumber === 1 ? 'left' : 'center' };
+    cell.border = thinBorder;
+  });
+
+  produits.forEach((p) => {
+    const data = { produit: p.nom };
+    dayKeys.forEach((key) => {
+      const val = p.jours?.[key];
+      data[key] = val === undefined || val === null ? '' : val;
+    });
+    const row = sheet.addRow(data);
+    row.height = 20;
     const hex = excelColor(p.categorieCouleur);
-    if (!hex) return;
-    for (let c = 0; c < header.length; c++) {
-      const cellAddress = xlsx.utils.encode_cell({ r: idx + 1, c });
-      if (!worksheet[cellAddress]) {
-        worksheet[cellAddress] = { t: 's', v: '' };
-      }
-      worksheet[cellAddress].s = {
-        ...(worksheet[cellAddress].s || {}),
-        fill: {
-          patternType: 'solid',
-          fgColor: { rgb: hex },
-        },
-      };
-    }
+    const fill = hex ? { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${hex}` } } : null;
+    row.eachCell((cell, colNumber) => {
+      if (fill) cell.fill = fill;
+      cell.alignment = { vertical: 'middle', horizontal: colNumber === 1 ? 'left' : 'center' };
+      cell.border = thinBorder;
+    });
   });
 
-  const workbook = xlsx.utils.book_new();
-  xlsx.utils.book_append_sheet(workbook, worksheet, 'Semaine');
-  return xlsx.write(workbook, {
-    bookType: 'xlsx',
-    type: 'buffer',
-  });
+  return workbook.xlsx.writeBuffer();
 }
 
 async function fetchStockMap(produitIds) {
@@ -344,7 +402,7 @@ function buildDayLabels(days) {
   return jours.map((jour, idx) => `${jour.slice(0, 3)} ${formatDateShort(days[idx])}`);
 }
 
-function generatePDF(doc, titre, produits, dayLabels) {
+function generatePDF(doc, titre, produits, dayLabels, dayKeys = []) {
   doc
     .fontSize(17)
     .font('Helvetica-Bold')
@@ -369,6 +427,11 @@ function generatePDF(doc, titre, produits, dayLabels) {
   const headerHeight = 30;
   const rowHeight = 20;
   let y = doc.y;
+
+  const effectiveDayKeys =
+    Array.isArray(dayKeys) && dayKeys.length === jours.length
+      ? dayKeys
+      : new Array(jours.length).fill('');
 
   const drawHeader = () => {
     let x = startX;
@@ -435,6 +498,18 @@ function generatePDF(doc, titre, produits, dayLabels) {
         .rect(x, y, dayColWidth, rowHeight)
         .strokeColor('#e2e8f0')
         .stroke();
+      const qty =
+        p.jours && effectiveDayKeys[i]
+          ? p.jours[effectiveDayKeys[i]]
+          : Array.isArray(p.jours)
+          ? p.jours[i]
+          : undefined;
+      if (qty || qty === 0) {
+        doc.text(String(qty), x, y + 5, {
+          width: dayColWidth,
+          align: 'center',
+        });
+      }
       x += dayColWidth;
     }
 
@@ -661,9 +736,33 @@ feuilleTypes.forEach(({ key, label, fileSuffix }) => {
           { nom: 'asc' },
         ],
         select: {
+          id: true,
           nom: true,
           categorieRef: { select: { nom: true, couleur: true } },
         },
+      });
+
+      const rangeStart = new Date(days[0]);
+      rangeStart.setUTCHours(0, 0, 0, 0);
+      const rangeEnd = new Date(days[6]);
+      rangeEnd.setUTCHours(23, 59, 59, 999);
+      const nature = key === 'ventes' ? 'VENTE' : 'PERTE';
+
+      const mouvements = await prisma.mouvementStock.findMany({
+        where: {
+          date: { gte: rangeStart, lte: rangeEnd },
+          nature,
+          produit: resolvedMagasinId ? { magasinId: resolvedMagasinId } : undefined,
+        },
+        select: { produitId: true, date: true, quantite: true },
+      });
+
+      const quantites = {};
+      mouvements.forEach((m) => {
+        const dKey = new Date(m.date).toISOString().slice(0, 10);
+        const qty = Math.abs(m.quantite || 0);
+        if (!quantites[m.produitId]) quantites[m.produitId] = {};
+        quantites[m.produitId][dKey] = (quantites[m.produitId][dKey] || 0) + qty;
       });
 
       const titre = `Feuille hebdomadaire ${label} – Semaine ${sem}`;
@@ -672,6 +771,7 @@ feuilleTypes.forEach(({ key, label, fileSuffix }) => {
           nom: p.nom,
           categorieNom: p.categorieRef?.nom || '',
           categorieCouleur: p.categorieRef?.couleur || null,
+          jours: quantites[p.id] || {},
         })),
         titre,
         days,
@@ -737,6 +837,30 @@ feuilleTypes.forEach(({ key, label, fileSuffix }) => {
         },
       });
 
+      const rangeStart = new Date(days[0]);
+      rangeStart.setUTCHours(0, 0, 0, 0);
+      const rangeEnd = new Date(days[6]);
+      rangeEnd.setUTCHours(23, 59, 59, 999);
+      const nature = key === 'ventes' ? 'VENTE' : 'PERTE';
+      const dayKeys = days.map((d) => d.toISOString().slice(0, 10));
+
+      const mouvements = await prisma.mouvementStock.findMany({
+        where: {
+          date: { gte: rangeStart, lte: rangeEnd },
+          nature,
+          produit: resolvedMagasinId ? { magasinId: resolvedMagasinId } : undefined,
+        },
+        select: { produitId: true, date: true, quantite: true },
+      });
+
+      const quantites = {};
+      mouvements.forEach((m) => {
+        const dKey = new Date(m.date).toISOString().slice(0, 10);
+        const qty = Math.abs(m.quantite || 0);
+        if (!quantites[m.produitId]) quantites[m.produitId] = {};
+        quantites[m.produitId][dKey] = (quantites[m.produitId][dKey] || 0) + qty;
+      });
+
       const doc = new PDFDocument({
         size: 'A4',
         layout: 'portrait',
@@ -780,8 +904,10 @@ feuilleTypes.forEach(({ key, label, fileSuffix }) => {
           stockActuel: stockMap[p.id] ?? 0,
           categorieNom: p.categorieRef?.nom || '',
           categorieCouleur: p.categorieRef?.couleur || null,
+          jours: quantites[p.id] || {},
         })),
         dayLabels,
+        dayKeys,
       );
 
       doc.end();
