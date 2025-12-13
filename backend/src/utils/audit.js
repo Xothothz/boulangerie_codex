@@ -39,6 +39,21 @@ export async function logAudit({
 }) {
   try {
     const actor = resolveActor(user || req?.user);
+    const baseDetails = toPlain(details);
+    const actorName =
+      baseDetails?.actorName ||
+      (req?.user
+        ? [req.user.prenom, req.user.nom].filter(Boolean).join(' ').trim() ||
+          req.user.nom ||
+          null
+        : null);
+    const finalDetails =
+      actorName && baseDetails && typeof baseDetails === 'object'
+        ? { ...baseDetails, actorName }
+        : actorName
+          ? { actorName }
+          : baseDetails;
+
     const data = {
       action,
       resourceType: resourceType || null,
@@ -52,7 +67,7 @@ export async function logAudit({
       userAgent: req?.headers?.['user-agent'] || null,
       requestId: req?.requestId || null,
       ...actor,
-      details: toPlain(details),
+      details: finalDetails,
     };
 
     await prisma.auditLog.create({ data });

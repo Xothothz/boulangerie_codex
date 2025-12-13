@@ -2,6 +2,7 @@ import express from 'express';
 import prisma from '../config/db.js';
 import { requirePermission } from '../utils/permissions.js';
 import { logAudit } from '../utils/audit.js';
+import { getActionLabel, humanizeAuditLog } from '../utils/auditHuman.js';
 
 const router = express.Router();
 
@@ -124,7 +125,12 @@ router.get('/audit-logs', async (req, res) => {
       orderBy: { createdAt: 'desc' },
       take,
     });
-    res.json({ items });
+    const enriched = items.map((item) => ({
+      ...item,
+      actionLabel: getActionLabel(item.action),
+      humanMessage: humanizeAuditLog(item),
+    }));
+    res.json({ items: enriched });
   } catch (err) {
     console.error('Erreur GET /admin/audit-logs :', err);
     res.status(500).json({ error: 'Erreur lors du chargement des logs.' });

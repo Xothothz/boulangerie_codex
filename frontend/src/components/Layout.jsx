@@ -6,6 +6,7 @@ const baseNav = [
   { to: '/tableau-de-bord', label: 'Tableau de bord' },
   { to: '/produits', label: 'Produits' },
   { to: '/stock', label: 'Stock' },
+  { to: '/valorisation', label: 'Valorisation' },
   { to: '/commandes', label: 'Commandes' },
   { to: '/mouvements', label: 'Mouvements de stock' },
   { to: '/inventaire', label: 'Inventaire' },

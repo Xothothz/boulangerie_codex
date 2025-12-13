@@ -35,6 +35,7 @@ router.post('/historique', requirePermission('prix:write'), async (req, res) => 
         id: Number(produitId),
         ...(resolvedMagasinId ? { magasinId: resolvedMagasinId } : {}),
       },
+      select: { id: true, nom: true, reference: true },
     });
 
     if (!produit) {
@@ -56,7 +57,13 @@ router.post('/historique', requirePermission('prix:write'), async (req, res) => 
       resourceType: 'produit',
       resourceId: Number(produitId),
       magasinId: resolvedMagasinId ?? null,
-      details: { type, prix: Number(prix), dateDebut: dateDebut || null },
+      details: {
+        type,
+        prix: Number(prix),
+        dateDebut: dateDebut || null,
+        produitNom: produit?.nom,
+        produitReference: produit?.reference,
+      },
     });
 
     res.status(201).json(historique);

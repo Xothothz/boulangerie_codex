@@ -1274,8 +1274,13 @@ function Parametres() {
                             <td className="px-3 py-2 text-slate-600">
                               {formatDateTime(log.createdAt)}
                             </td>
-                            <td className="px-3 py-2 text-slate-900 font-semibold">
-                              {log.action}
+                            <td className="px-3 py-2">
+                              <div className="text-slate-900 font-semibold">
+                                {log.humanMessage || log.actionLabel || log.action}
+                              </div>
+                              <div className="text-xs text-slate-500">
+                                {log.action}
+                              </div>
                             </td>
                             <td className="px-3 py-2 text-slate-700">
                               {log.userEmail || log.userId || '-'}

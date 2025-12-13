@@ -3,6 +3,9 @@ import prisma from '../config/db.js';
 import { ensureMagasin, getMagasinScope } from '../utils/magasin.js';
 import xlsx from 'xlsx';
 import PDFDocument from 'pdfkit';
+import ExcelJS from 'exceljs';
+import { format } from 'date-fns';
+import { fr } from 'date-fns/locale';
 import { getWeekDateRange } from '../utils/week.js';
 import { requirePermission, hasPermission } from '../utils/permissions.js';
 import { logAudit } from '../utils/audit.js';
@@ -171,7 +174,7 @@ router.post('/mouvements', requirePermission('stock:movement:create'), async (re
         id: Number(produitId),
         ...(resolvedMagasinId ? { magasinId: resolvedMagasinId } : {}),
       },
-      select: { id: true },
+      select: { id: true, nom: true, reference: true },
     });
 
     if (!produit) {
@@ -201,6 +204,9 @@ router.post('/mouvements', requirePermission('stock:movement:create'), async (re
         type,
         quantite: signedQuantity,
         nature: resolveNature(nature, type),
+        produitNom: produit?.nom,
+        produitReference: produit?.reference,
+        commentaire: commentaire || null,
       },
     });
 
@@ -440,13 +446,23 @@ router.get('/inventaire/:id/pdf', requirePermission('inventaire:export'), async 
       .text(`Utilisateur : ${inv.utilisateur?.nom || inv.utilisateur?.email || '-'}`);
 
     doc.moveDown(1);
-    const headers = ['Catégorie', 'Produit', 'Référence', 'Stock avant', 'Quantité réelle', 'Écart'];
+    const headers = ['Catégorie', 'Produit', 'Stock avant', 'Quantité réelle', 'Écart'];
     const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-    const colWidths = [pageWidth * 0.2, pageWidth * 0.3, pageWidth * 0.12, pageWidth * 0.12, pageWidth * 0.12, pageWidth * 0.14];
+    const colWidths = [
+      pageWidth * 0.24,
+      pageWidth * 0.36,
+      pageWidth * 0.14,
+      pageWidth * 0.13,
+      pageWidth * 0.13,
+    ];
     const startX = doc.page.margins.left;
     let y = doc.y;
-    const headerHeight = 28;
-    const rowHeight = 20;
+    const headerHeight = 34;
+    const rowHeight = 28;
+    const headerTextSize = 11;
+    const bodyTextSize = 10;
+    const headerTextYOffset = (headerHeight - headerTextSize) / 2;
+    const bodyTextYOffset = (rowHeight - bodyTextSize) / 2;
 
     const drawHeader = () => {
       let x = startX;
@@ -457,15 +473,15 @@ router.get('/inventaire/:id/pdf', requirePermission('inventaire:export'), async 
         .fill()
         .restore();
       doc.strokeColor('#cbd5e1').lineWidth(1);
-      doc.font('Helvetica-Bold').fontSize(11).fillColor('#0f172a');
+      doc.font('Helvetica-Bold').fontSize(headerTextSize).fillColor('#0f172a');
       headers.forEach((h, idx) => {
         const w = colWidths[idx];
         doc.rect(x, y, w, headerHeight).stroke();
-        doc.text(h, x + 6, y + 6, { width: w - 12 });
+        doc.text(h, x + 8, y + headerTextYOffset - 2, { width: w - 16 });
         x += w;
       });
       y += headerHeight;
-      doc.font('Helvetica').fontSize(10).fillColor('#0f172a');
+      doc.font('Helvetica').fontSize(bodyTextSize).fillColor('#0f172a');
     };
 
     drawHeader();
@@ -482,7 +498,6 @@ router.get('/inventaire/:id/pdf', requirePermission('inventaire:export'), async 
         const vals = [
           l.produit?.categorie || '',
           l.produit?.nom || '',
-          l.produit?.reference || '',
           l.stockAvant,
           l.quantiteReelle,
           l.ecart,
@@ -491,7 +506,10 @@ router.get('/inventaire/:id/pdf', requirePermission('inventaire:export'), async 
         vals.forEach((val, idx) => {
           const w = colWidths[idx];
           doc.rect(x, y, w, rowHeight).strokeColor('#e2e8f0').stroke();
-          doc.text(String(val), x + 6, y + 6, { width: w - 12, ellipsis: true });
+          doc.text(String(val), x + 8, y + bodyTextYOffset - 2, {
+            width: w - 16,
+            ellipsis: true,
+          });
           x += w;
         });
         y += rowHeight;
@@ -633,6 +651,333 @@ router.get('/mouvements', async (req, res) => {
   } catch (err) {
     console.error('Erreur GET /stock/mouvements :', err);
     res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+/**
+ * GET /stock/valorisation
+ * Retourne, par produit, le stock courant et la valorisation HT/TTC
+ * (HT basé sur prixAchat, TTC basé sur prixVente).
+ */
+router.get('/valorisation', async (req, res) => {
+  const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
+
+  if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;
+
+  try {
+    const produits = await prisma.produit.findMany({
+      where: resolvedMagasinId ? { magasinId: resolvedMagasinId } : {},
+      select: {
+        id: true,
+        nom: true,
+        reference: true,
+        ifls: true,
+        categorie: true,
+        categorieId: true,
+        prixAchat: true,
+        prixVente: true,
+        categorieRef: { select: { id: true, nom: true } },
+      },
+    });
+
+    const produitIds = produits.map((p) => p.id);
+    if (produitIds.length === 0) {
+      return res.json({ totals: { ht: 0, ttc: 0 }, items: [] });
+    }
+
+    const grouped = await prisma.mouvementStock.groupBy({
+      by: ['produitId'],
+      _sum: { quantite: true },
+      where: {
+        produitId: { in: produitIds },
+        NOT: { nature: 'PERTE' },
+      },
+    });
+
+    const stockMap = Object.fromEntries(
+      grouped.map((g) => [g.produitId, g._sum.quantite || 0]),
+    );
+
+    const items = produits.map((p) => {
+      const stock = stockMap[p.id] ?? 0;
+      const prixAchat =
+        p.prixAchat === null || p.prixAchat === undefined
+          ? null
+          : Number(p.prixAchat);
+      const prixVente =
+        p.prixVente === null || p.prixVente === undefined
+          ? null
+          : Number(p.prixVente);
+      return {
+        produitId: p.id,
+        nom: p.nom,
+        reference: p.reference,
+        categorie: p.categorieRef?.nom || p.categorie || null,
+        categorieId: p.categorieId || p.categorieRef?.id || null,
+        stock,
+        prixAchat,
+        prixVente,
+        valeurHT: stock * (prixAchat ?? 0),
+        valeurTTC: stock * (prixVente ?? 0),
+      };
+    });
+
+    const totals = items.reduce(
+      (acc, item) => {
+        acc.ht += item.valeurHT;
+        acc.ttc += item.valeurTTC;
+        return acc;
+      },
+      { ht: 0, ttc: 0 },
+    );
+
+    return res.json({ totals, items });
+  } catch (err) {
+    console.error('Erreur GET /stock/valorisation :', err);
+    return res
+      .status(500)
+      .json({ error: 'Erreur lors du calcul de la valorisation du stock.' });
+  }
+});
+
+// Export PDF valorisation stock
+router.get('/valorisation/pdf', async (req, res) => {
+  const { isAdmin, resolvedMagasinId } = getMagasinScope(req);
+
+  if (!ensureMagasin(res, resolvedMagasinId, isAdmin)) return;
+
+  try {
+    const produits = await prisma.produit.findMany({
+      where: resolvedMagasinId ? { magasinId: resolvedMagasinId } : {},
+      select: {
+        id: true,
+        nom: true,
+        reference: true,
+        ifls: true,
+        categorie: true,
+        categorieRef: { select: { nom: true } },
+        prixAchat: true,
+        prixVente: true,
+      },
+      orderBy: [{ categorieRef: { nom: 'asc' } }, { nom: 'asc' }],
+    });
+
+    const produitIds = produits.map((p) => p.id);
+    const grouped = produitIds.length
+      ? await prisma.mouvementStock.groupBy({
+          by: ['produitId'],
+          _sum: { quantite: true },
+          where: {
+            produitId: { in: produitIds },
+            NOT: { nature: 'PERTE' },
+          },
+        })
+      : [];
+
+    const stockMap = Object.fromEntries(
+      grouped.map((g) => [g.produitId, g._sum.quantite || 0]),
+    );
+
+    const items = produits.map((p) => {
+      const stock = stockMap[p.id] ?? 0;
+      const prixAchat =
+        p.prixAchat === null || p.prixAchat === undefined
+          ? null
+          : Number(p.prixAchat);
+      const prixVente =
+        p.prixVente === null || p.prixVente === undefined
+          ? null
+          : Number(p.prixVente);
+      return {
+        nom: p.nom,
+        reference: p.reference || '',
+        ifls: p.ifls || '',
+        categorie: p.categorieRef?.nom || p.categorie || '',
+        stock,
+        prixAchat,
+        prixVente,
+        valeurHT: stock * (prixAchat ?? 0),
+        valeurTTC: stock * (prixVente ?? 0),
+      };
+    });
+
+    const totals = items.reduce(
+      (acc, item) => {
+        acc.ht += item.valeurHT;
+        acc.ttc += item.valeurTTC;
+        return acc;
+      },
+      { ht: 0, ttc: 0 },
+    );
+
+    const doc = new PDFDocument({
+      size: 'A4',
+      layout: 'portrait',
+      margins: { top: 30, left: 30, right: 30, bottom: 30 },
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="Valorisation_stock.pdf"',
+    );
+    doc.pipe(res);
+
+    await logAudit({
+      req,
+      action: 'valorisation:export',
+      resourceType: 'stock',
+      magasinId: resolvedMagasinId ?? null,
+      details: { format: 'pdf', items: items.length, totalHT: totals.ht, totalTTC: totals.ttc },
+    });
+
+    const today = format(new Date(), "dd MMMM yyyy 'à' HH'h'mm", { locale: fr });
+
+    doc
+      .fontSize(18)
+      .font('Helvetica-Bold')
+      .fillColor('#0f172a')
+      .text('Lambert Gestion : Boulangerie', { align: 'center' })
+      .moveDown(0.2)
+      .fontSize(14)
+      .text('Valorisation du stock', { align: 'center' })
+      .moveDown(0.2)
+      .fontSize(10)
+      .fillColor('#475569')
+      .text(`Généré le ${today}`, { align: 'center' });
+
+    doc.moveDown(1);
+
+    const cardWidth = (doc.page.width - doc.page.margins.left - doc.page.margins.right - 16) / 2;
+    const cardHeight = 70;
+    const startX = doc.page.margins.left;
+    let y = doc.y;
+
+    const drawCard = (x, title, value, subtitle) => {
+      doc
+        .roundedRect(x, y, cardWidth, cardHeight, 10)
+        .fillOpacity(1)
+        .fill('#f8fafc')
+        .stroke('#e2e8f0');
+      doc
+        .fillColor('#0f172a')
+        .font('Helvetica-Bold')
+        .fontSize(12)
+        .text(title, x + 16, y + 14);
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(20)
+        .fillColor('#0f172a')
+        .text(value, x + 16, y + 34);
+      if (subtitle) {
+        doc
+          .font('Helvetica')
+          .fontSize(10)
+          .fillColor('#475569')
+          .text(subtitle, x + 16, y + 58);
+      }
+    };
+
+    drawCard(
+      startX,
+      'Total HT',
+      `${totals.ht.toFixed(2)} €`,
+      'Basé sur les prix d’achat',
+    );
+    drawCard(
+      startX + cardWidth + 16,
+      'Total TTC',
+      `${totals.ttc.toFixed(2)} €`,
+      'Basé sur les prix de vente',
+    );
+
+    y += cardHeight + 24;
+    doc.y = y;
+
+    const headers = [
+      'Catégorie',
+      'Produit',
+      'IFLS',
+      'Stock',
+      'PU HT',
+      'PU TTC',
+      'Valeur HT',
+      'Valeur TTC',
+    ];
+    const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const colWidths = [
+      pageWidth * 0.18,
+      pageWidth * 0.25,
+      pageWidth * 0.1,
+      pageWidth * 0.08,
+      pageWidth * 0.1,
+      pageWidth * 0.1,
+      pageWidth * 0.11,
+      pageWidth * 0.08,
+    ];
+    const headerHeight = 28;
+    const rowHeight = 25;
+    const headerTextSize = 10;
+    const bodyTextSize = 9.5;
+    const headerTextYOffset = (headerHeight - headerTextSize) / 2;
+    const bodyTextYOffset = (rowHeight - bodyTextSize) / 2;
+    let tableY = doc.y + 8;
+
+    const drawHeader = () => {
+      let x = startX;
+      doc
+        .save()
+        .fillColor('#f8fafc')
+        .rect(startX, tableY, pageWidth, headerHeight)
+        .fill()
+        .restore();
+      doc.strokeColor('#cbd5e1').lineWidth(1);
+      doc.font('Helvetica-Bold').fontSize(headerTextSize).fillColor('#0f172a');
+      headers.forEach((h, idx) => {
+        const w = colWidths[idx];
+        doc.rect(x, tableY, w, headerHeight).stroke();
+        doc.text(h, x + 6, tableY + headerTextYOffset - 2, { width: w - 12 });
+        x += w;
+      });
+      tableY += headerHeight;
+      doc.font('Helvetica').fontSize(bodyTextSize).fillColor('#0f172a');
+    };
+
+    drawHeader();
+
+    items.forEach((item) => {
+      if (tableY + rowHeight > doc.page.height - doc.page.margins.bottom) {
+        doc.addPage();
+        tableY = doc.page.margins.top;
+        drawHeader();
+      }
+      const vals = [
+        item.categorie || '',
+        item.nom,
+        item.ifls || '',
+        item.stock,
+        item.prixAchat !== null && item.prixAchat !== undefined ? item.prixAchat.toFixed(2) : '—',
+        item.prixVente !== null && item.prixVente !== undefined ? item.prixVente.toFixed(2) : '—',
+        item.valeurHT.toFixed(2),
+        item.valeurTTC.toFixed(2),
+      ];
+      let x = startX;
+      vals.forEach((val, idx) => {
+        const w = colWidths[idx];
+        doc.rect(x, tableY, w, rowHeight).strokeColor('#e2e8f0').stroke();
+        doc.text(String(val), x + 6, tableY + bodyTextYOffset - 2, {
+          width: w - 12,
+          ellipsis: true,
+        });
+        x += w;
+      });
+      tableY += rowHeight;
+    });
+
+    doc.end();
+  } catch (err) {
+    console.error('Erreur GET /stock/valorisation/pdf :', err);
+    res.status(500).json({ error: 'Erreur lors de la génération du PDF de valorisation.' });
   }
 });
 
@@ -920,19 +1265,65 @@ router.get('/inventaire-feuille-excel', requirePermission('inventaire:export'), 
       grouped.map((g) => [g.produitId, g._sum.quantite || 0]),
     );
 
-    const rows = produits.map((p) => [
-      p.categorie || '',
-      p.nom,
-      p.reference || '',
-      stockMap[p.id] ?? 0,
-      '', // colonne saisie magasin
-    ]);
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Inventaire', {
+      views: [{ state: 'frozen', ySplit: 1 }],
+    });
 
-    const header = ['Catégorie', 'Produit', 'Référence', 'Stock actuel', 'Quantité réelle'];
-    const worksheet = xlsx.utils.aoa_to_sheet([header, ...rows]);
-    const workbook = xlsx.utils.book_new();
-    xlsx.utils.book_append_sheet(workbook, worksheet, 'Inventaire');
-    const buffer = xlsx.write(workbook, { bookType: 'xlsx', type: 'buffer' });
+    worksheet.columns = [
+      { header: 'Catégorie', key: 'categorie', width: 28 },
+      { header: 'Produit', key: 'nom', width: 42 },
+      { header: 'Stock actuel', key: 'stock', width: 16 },
+      { header: 'Quantité réelle', key: 'quantite', width: 18 },
+    ];
+
+    const headerRow = worksheet.getRow(1);
+    headerRow.height = 26;
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FF0F172A' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+      };
+    });
+
+    produits.forEach((p, index) => {
+      const row = worksheet.addRow({
+        categorie: p.categorie || '',
+        nom: p.nom,
+        stock: stockMap[p.id] ?? 0,
+        quantite: '',
+      });
+      row.height = 22;
+      row.eachCell((cell, colNumber) => {
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: colNumber >= 3 ? 'right' : 'left',
+          wrapText: true,
+        };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        };
+        // Alternance légère pour lisibilité
+        if (index % 2 === 1) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
+        }
+      });
+    });
+
+    // Espace après les données pour notes éventuelles
+    worksheet.addRow({});
+    worksheet.addRow({ categorie: 'Notes :' });
+    worksheet.lastRow.height = 22;
+
+    const buffer = await workbook.xlsx.writeBuffer();
 
     res.setHeader(
       'Content-Disposition',
@@ -1017,13 +1408,22 @@ router.get('/inventaire-feuille-pdf', requirePermission('inventaire:export'), as
       .text('Feuille d’inventaire', { align: 'center' });
 
     doc.moveDown(1);
-    const headers = ['Catégorie', 'Produit', 'Référence', 'Stock actuel', 'Quantité réelle'];
+    const headers = ['Catégorie', 'Produit', 'Stock actuel', 'Quantité réelle'];
     const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-    const colWidths = [pageWidth * 0.2, pageWidth * 0.3, pageWidth * 0.15, pageWidth * 0.15, pageWidth * 0.2];
+    const colWidths = [
+      pageWidth * 0.25,
+      pageWidth * 0.4,
+      pageWidth * 0.15,
+      pageWidth * 0.2,
+    ];
     const startX = doc.page.margins.left;
     let y = doc.y;
-    const headerHeight = 22;
-    const rowHeight = 20;
+    const headerHeight = 32;
+    const rowHeight = 26;
+    const headerTextSize = 11;
+    const bodyTextSize = 10;
+    const headerTextYOffset = (headerHeight - headerTextSize) / 2;
+    const bodyTextYOffset = (rowHeight - bodyTextSize) / 2;
 
     const drawHeader = () => {
       let x = startX;
@@ -1034,15 +1434,15 @@ router.get('/inventaire-feuille-pdf', requirePermission('inventaire:export'), as
         .fill()
         .restore();
       doc.strokeColor('#cbd5e1').lineWidth(1);
-      doc.font('Helvetica-Bold').fontSize(11).fillColor('#0f172a');
+      doc.font('Helvetica-Bold').fontSize(headerTextSize).fillColor('#0f172a');
       headers.forEach((h, idx) => {
         const w = colWidths[idx];
         doc.rect(x, y, w, headerHeight).stroke();
-        doc.text(h, x + 6, y + 6, { width: w - 12 });
+        doc.text(h, x + 8, y + headerTextYOffset - 2, { width: w - 16 });
         x += w;
       });
       y += headerHeight;
-      doc.font('Helvetica').fontSize(10).fillColor('#0f172a');
+      doc.font('Helvetica').fontSize(bodyTextSize).fillColor('#0f172a');
     };
 
     drawHeader();
@@ -1056,7 +1456,6 @@ router.get('/inventaire-feuille-pdf', requirePermission('inventaire:export'), as
       const values = [
         p.categorie || '',
         p.nom,
-        p.reference || '',
         stockMap[p.id] ?? 0,
         '', // champ vide
       ];
@@ -1064,7 +1463,10 @@ router.get('/inventaire-feuille-pdf', requirePermission('inventaire:export'), as
       values.forEach((val, idx) => {
         const w = colWidths[idx];
         doc.rect(x, y, w, rowHeight).strokeColor('#e2e8f0').stroke();
-        doc.text(String(val), x + 6, y + 6, { width: w - 12, ellipsis: true });
+        doc.text(String(val), x + 8, y + bodyTextYOffset - 2, {
+          width: w - 16,
+          ellipsis: true,
+        });
         x += w;
       });
       y += rowHeight;

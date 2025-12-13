@@ -12,6 +12,7 @@ import Historique from './pages/Historique'
 import Mouvements from './pages/Mouvements'
 import PendingAffectation from './pages/PendingAffectation'
 import Profil from './pages/Profil'
+import Valorisation from './pages/Valorisation'
 
 function PrivateRoute({ children }) {
   const { token, initializing, user, logout } = useAuth()
@@ -77,6 +78,16 @@ function App() {
           <PrivateRoute>
             <Layout title="Stock produits">
               <Stock />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/valorisation"
+        element={
+          <PrivateRoute>
+            <Layout title="Valorisation du stock">
+              <Valorisation />
             </Layout>
           </PrivateRoute>
         }
