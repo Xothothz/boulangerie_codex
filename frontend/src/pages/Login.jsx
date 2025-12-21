@@ -1,3 +1,4 @@
+// frontend/src/pages/Login.jsx
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { API_URL } from '../config/api'
@@ -5,35 +6,45 @@ import { useAuth } from '../context/AuthContext'
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
 const DEV_LOGIN_ENABLED = import.meta.env.VITE_DEV_LOGIN === '1'
-console.log('GOOGLE_CLIENT_ID (build) =', GOOGLE_CLIENT_ID)
 
 function Login() {
   const navigate = useNavigate()
   const { login, token } = useAuth()
+
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
   const [devEmail, setDevEmail] = useState('')
   const [devNom, setDevNom] = useState('')
   const [devLoading, setDevLoading] = useState(false)
 
+  // Si déjà connecté → redirection
   useEffect(() => {
     if (token) {
       navigate('/produits', { replace: true })
     }
   }, [navigate, token])
 
+  /**
+   * Callback appelé par Google Identity Services (GSI)
+   * response.credential = ID token (JWT) fourni par Google
+   * On l’envoie au backend pour validation + génération de token applicatif
+   */
   const handleCredentialResponse = useCallback(
     async (response) => {
       if (!response?.credential) {
         setError('Réponse Google invalide.')
         return
       }
+
       setError('')
       setLoading(true)
+
       try {
         const res = await fetch(`${API_URL}/auth/google`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          // IMPORTANT : ton backend attend { idToken }
           body: JSON.stringify({ idToken: response.credential }),
         })
 
@@ -43,11 +54,12 @@ function Login() {
           throw new Error(data.error || 'Échec de l’authentification.')
         }
 
+        // Attendu : { token, user }
         login(data.token, data.user)
         navigate('/produits', { replace: true })
       } catch (err) {
         console.error('Erreur login Google', err)
-        setError(err.message || 'Connexion impossible.')
+        setError(err?.message || 'Connexion impossible.')
       } finally {
         setLoading(false)
       }
@@ -55,6 +67,9 @@ function Login() {
     [login, navigate],
   )
 
+  /**
+   * Charge le script Google GSI si nécessaire et rend le bouton
+   */
   useEffect(() => {
     // Si Google n’est pas configuré et qu’on n’est pas en mode dev, on affiche l’erreur.
     if (!GOOGLE_CLIENT_ID && !DEV_LOGIN_ENABLED) {
@@ -66,12 +81,18 @@ function Login() {
 
     const renderButton = () => {
       if (!window.google?.accounts?.id) return
+
       const buttonContainer = document.getElementById('googleSignInDiv')
       if (!buttonContainer) return
+
+      // Évite de re-render plusieurs boutons si le composant re-monte
+      buttonContainer.innerHTML = ''
+
       window.google.accounts.id.initialize({
         client_id: GOOGLE_CLIENT_ID,
         callback: handleCredentialResponse,
       })
+
       window.google.accounts.id.renderButton(buttonContainer, {
         theme: 'outline',
         size: 'large',
@@ -79,11 +100,13 @@ function Login() {
       })
     }
 
+    // Script déjà chargé
     if (window.google?.accounts?.id) {
       renderButton()
       return
     }
 
+    // Charger le script GSI
     const script = document.createElement('script')
     script.src = 'https://accounts.google.com/gsi/client'
     script.async = true
@@ -91,36 +114,52 @@ function Login() {
     script.onload = renderButton
     script.onerror = () =>
       setError('Impossible de charger Google SSO. Vérifiez la connexion réseau.')
+
     document.body.appendChild(script)
 
     return () => {
-      document.body.removeChild(script)
+      // Évite d’enlever un script si plusieurs pages le partagent
+      // (mais ici ça ne devrait pas poser souci)
+      try {
+        document.body.removeChild(script)
+      } catch {
+        // ignore
+      }
     }
   }, [handleCredentialResponse])
 
+  /**
+   * Login dev (bypass) si activé
+   */
   const handleDevLogin = async (e) => {
     e.preventDefault()
     setError('')
+
     if (!devEmail) {
       setError('Merci de saisir un email.')
       return
     }
+
     setDevLoading(true)
+
     try {
       const res = await fetch(`${API_URL}/auth/dev-login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: devEmail, nom: devNom }),
       })
+
       const data = await res.json().catch(() => ({}))
+
       if (!res.ok) {
         throw new Error(data.error || 'Échec dev-login.')
       }
+
       login(data.token, data.user)
       navigate('/produits', { replace: true })
     } catch (err) {
       console.error('Erreur dev-login', err)
-      setError(err.message || 'Connexion dev impossible.')
+      setError(err?.message || 'Connexion dev impossible.')
     } finally {
       setDevLoading(false)
     }
@@ -133,12 +172,15 @@ function Login() {
           <p className="text-xs uppercase tracking-[0.2em] text-emerald-700 font-semibold">
             Lambert Gestion
           </p>
+
           <h1 className="text-2xl font-bold text-slate-900">
             Connexion Boulangerie
           </h1>
+
           <p className="text-sm text-slate-500">
             Authentification Google requise pour accéder aux données magasin.
           </p>
+
           {DEV_LOGIN_ENABLED && (
             <p className="text-xs text-amber-600 font-medium">
               Mode développeur activé : connexion locale disponible.
@@ -154,9 +196,11 @@ function Login() {
 
         <div className="flex flex-col items-center gap-4">
           <div id="googleSignInDiv" className="w-full flex justify-center" />
+
           {loading && (
             <p className="text-sm text-slate-500">Connexion en cours...</p>
           )}
+
           <p className="text-xs text-slate-500 text-center">
             Utilisez votre compte Google professionnel autorisé pour continuer.
           </p>
@@ -178,6 +222,7 @@ function Login() {
                   required
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1">
                   Nom / prénom (optionnel)
@@ -190,6 +235,7 @@ function Login() {
                   placeholder="Jean Dupont"
                 />
               </div>
+
               <button
                 type="submit"
                 disabled={devLoading}
@@ -197,9 +243,10 @@ function Login() {
               >
                 {devLoading ? 'Connexion...' : 'Connexion dev (bypass Google)'}
               </button>
+
               <p className="text-xs text-slate-500">
-                Route limitée au mode dev (DEV_LOGIN_ENABLED=1). À ne pas
-                activer en production.
+                Route limitée au mode dev (DEV_LOGIN_ENABLED=1). À ne pas activer
+                en production.
               </p>
             </form>
           </div>

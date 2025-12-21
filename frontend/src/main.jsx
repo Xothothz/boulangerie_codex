@@ -6,14 +6,21 @@ import { AuthProvider } from './context/AuthContext.jsx'
 import { MagasinProvider } from './context/MagasinContext.jsx'
 import './index.css'
 
+// Détection automatique du contexte de déploiement
+// - /boulangerie/...  → portail (basename = /boulangerie)
+// - sous-domaine      → racine (basename = '')
+const basename = window.location.pathname.startsWith('/boulangerie')
+  ? '/boulangerie'
+  : ''
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename={basename}>
       <AuthProvider>
         <MagasinProvider>
           <App />
         </MagasinProvider>
       </AuthProvider>
     </BrowserRouter>
-  </StrictMode>,
+  </StrictMode>
 )
